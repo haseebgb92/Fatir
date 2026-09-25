@@ -183,7 +183,7 @@ pub fn tool_definitions_for_hint(hint: &str) -> Vec<Value> {
         return select(["amazon_keyword_research", "open_path"].into_iter().collect());
     }
     if !explicit_headless && browser_request && (h.contains("continue with google") || h.contains("sign in with google") || h.contains("login with google")) {
-        return select(["browser_open_url", "browser_click_text", "browser_page_summary", "browser_get_url", "browser_console_messages", "browser_network_recent"].into_iter().collect());
+        return select(["browser_open_url", "browser_click_text", "browser_page_summary", "browser_get_url", "browser_console_messages", "browser_network_recent", "browser_takeover", "browser_takeover_status", "credential_list", "browser_fill_credential", "browser_fill_credential_by_label"].into_iter().collect());
     }
 
     let mut allowed: HashSet<&str> = [
@@ -200,7 +200,7 @@ pub fn tool_definitions_for_hint(hint: &str) -> Vec<Value> {
     if browser_request && !explicit_headless {
         allowed.extend([
             "browser_open_url","browser_get_url","browser_page_summary","browser_click_text","browser_fill_by_label",
-            "browser_elements","browser_click_element","browser_fill_element","browser_fill_credential","browser_upload_file",
+            "browser_elements","browser_click_element","browser_fill_element","browser_fill_credential","browser_fill_credential_by_label","browser_upload_file",
             "browser_key","browser_scroll","browser_observe","browser_click","browser_type","web_search","share_whatsapp_send","share_email_draft","share_latest_screenshot",
             "browser_tabs","browser_new_tab","browser_select_tab","browser_close_tab","browser_extract_structure",
             "browser_network_recent","browser_network_request","browser_console_messages","browser_diagnostics","browser_memory_current",
