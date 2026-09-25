@@ -181,7 +181,17 @@ async fn send_message(
     attachments: Vec<Attachment>,
     mode: String,
 ) -> Result<AgentResponse, String> {
-    ollama::send_message(state.inner().clone(), &session_id, &text, attachments, &mode).await.map_err(|e| e.to_string())
+    let shared = state.inner().clone();
+    match tokio::time::timeout(
+        std::time::Duration::from_secs(15 * 60),
+        ollama::send_message(shared.clone(), &session_id, &text, attachments, &mode),
+    ).await {
+        Ok(result) => result.map_err(|e| e.to_string()),
+        Err(_) => {
+            let _ = ollama::cancel_run(shared, &session_id).await;
+            Err("FATIR_TIMEOUT: foreground chat task exceeded 15 minutes and was stopped".into())
+        }
+    }
 }
 
 #[tauri::command]
