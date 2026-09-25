@@ -119,10 +119,12 @@
         <div><span>Routines</span><strong id="routineCount">—</strong></div>
         <div><span>Projects</span><strong id="projectCount">—</strong></div>
         <div><span>Alerts</span><strong id="alertCount">—</strong></div>
+        <div><span>Agent schedules</span><strong id="scheduleCount">—</strong></div>
       </div>
       <div class="ops-tabs" role="tablist">
         <button class="ops-tab active" data-tab="tasks" type="button">Tasks</button>
         <button class="ops-tab" data-tab="jobs" type="button">Jobs</button>
+        <button class="ops-tab" data-tab="schedules" type="button">Schedules</button>
         <button class="ops-tab" data-tab="routines" type="button">Routines</button>
         <button class="ops-tab" data-tab="projects" type="button">Projects</button>
         <button class="ops-tab" data-tab="runtime" type="button">Runtime</button>
@@ -132,6 +134,7 @@
       </div>
       <section id="opsTasks" class="ops-panel"><div id="taskList" class="ops-list"><div class="activity-empty">Loading…</div></div></section>
       <section id="opsJobs" class="ops-panel hidden"><div id="jobList" class="ops-list"><div class="activity-empty">Loading…</div></div></section>
+      <section id="opsSchedules" class="ops-panel hidden"><div class="activity-title"><strong>Scheduled Agent / Web Tasks</strong><small>Persistent · systemd-backed</small></div><div id="agentScheduleList" class="ops-list"><div class="activity-empty">Loading…</div></div></section>
       <section id="opsRoutines" class="ops-panel hidden"><div class="activity-title"><strong>Saved routines / Teach 3.0</strong><button id="captureRoutine" type="button">Capture recent</button></div><div id="routineListSaved" class="ops-list"><div class="activity-empty">Loading…</div></div></section>
       <section id="opsProjects" class="ops-panel hidden"><div class="activity-title"><strong>Known projects</strong><small>Metadata only</small></div><div id="projectList" class="ops-list"><div class="activity-empty">Loading…</div></div></section>
       <section id="opsRuntime" class="ops-panel hidden"><div class="activity-title"><strong>V1 runtime</strong><small>Task engine & continuity</small></div><div id="runtimeList" class="ops-list"><div class="activity-empty">Loading…</div></div></section>
@@ -152,6 +155,10 @@
       <section class="activity-section">
         <div class="activity-title"><strong>Recent actions</strong><button id="refreshActivity" type="button">Refresh</button></div>
         <div id="activityList" class="activity-list"><div class="activity-empty">Loading…</div></div>
+      </section>
+      <section class="activity-section">
+        <div class="activity-title"><strong>Chats</strong><small>Shared with Companion</small></div>
+        <div id="chatHistoryList" class="activity-list"><div class="activity-empty">Loading…</div></div>
       </section>
       <section class="activity-section">
         <div class="activity-title"><strong>Routine Fatir has learned</strong><small>Aggregate only</small></div>
