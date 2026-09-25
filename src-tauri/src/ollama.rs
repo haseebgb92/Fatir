@@ -1442,6 +1442,25 @@ async fn agent_loop(state: SharedState, session_id: &str, mode: &str, token: Can
                 continue;
             }
 
+
+            if name == "agent_schedule_create" {
+                let execution_mode = args.get("execution_mode").and_then(Value::as_str).unwrap_or("agent");
+                if execution_mode == "headless_browser" && !explicit_headless {
+                    let msg = "Blocked headless scheduled-agent creation because the user did not explicitly authorize headless execution in this request.".to_string();
+                    trace.push(TraceItem{title:"agent schedule".into(),detail:msg.clone(),status:"error".into(),resources:vec![]});
+                    let mut sessions=state.sessions.lock().await;
+                    if let Some(history)=sessions.get_mut(session_id){history.push(json!({"role":"tool","tool_name":name,"content":msg}));}
+                    drop(sessions); persist(&state).await; continue;
+                }
+                if execution_mode == "active_browser" && !adaptive::is_active_browser_request(&hint) {
+                    let msg = "Blocked active-browser schedule creation because the user did not explicitly request their current/active browser session. Use managed_browser instead.".to_string();
+                    trace.push(TraceItem{title:"agent schedule".into(),detail:msg.clone(),status:"error".into(),resources:vec![]});
+                    let mut sessions=state.sessions.lock().await;
+                    if let Some(history)=sessions.get_mut(session_id){history.push(json!({"role":"tool","tool_name":name,"content":msg}));}
+                    drop(sessions); persist(&state).await; continue;
+                }
+            }
+
             let risk = tools::risk_for(&name, &args).to_string();
             let schedule_preapproved = agent_schedules::tool_preapproved(&name, &args);
             if permissions::requires_approval(&risk, &name) && !schedule_preapproved {
