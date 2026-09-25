@@ -188,12 +188,12 @@ assert 'if let Ok(result)=chrome_mcp_elements().await { return Ok(result); }' in
 assert 'if mcp_uid.is_match(element_id) { return chrome_mcp_click_uid(element_id).await; }' in tools, 'MCP uid click path missing'
 ui=(root/'ui/app.js').read_text()
 assert "invoke('project_list')" in ui and "invoke('terminal_session_list')" in ui and "invoke('v1_status')" in ui, 'V1 Command Center must fetch project/terminal/runtime state before rendering it'
-assert 'persistent local schedule(s)' in ui, 'V1 Command Center schedule status missing'
+assert 'agent schedule(s)' in ui and 'agentScheduleList' in ui, 'V1.2 Command Center agent schedule status missing'
 
 install=(root/'install.sh').read_text()
 assert 'NODE_MAJOR == 22 && NODE_MINOR >= 12' in install, 'Installer must enforce Chrome DevTools MCP Node 22.12+ compatibility'
-assert 'Building Fatir v1.1.1' in install, 'Installer version label mismatch'
-assert './scripts/validate.sh' in install and 'Validating Fatir v1.1.1 source' in install, 'Installer must run source validation before Cargo build'
+assert 'Building Fatir v1.2.0' in install, 'Installer version label mismatch'
+assert './scripts/validate.sh' in install and 'Validating Fatir v1.2.0 source' in install, 'Installer must run source validation before Cargo build'
 assert '[9/9] Starting Fatir' in install and '[1/8]' not in install and '[8/8]' not in install, 'V1 installer progress numbering must be internally consistent'
 assert 'chrome-devtools-mcp@${MCP_VERSION}' in install, 'Installer must provision Chrome DevTools MCP'
 assert 'setup_22.x' in install, 'Installer must ensure compatible Node.js for MCP'
