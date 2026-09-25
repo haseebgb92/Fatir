@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.2.0 — Scheduled Agent + Chat Sync
+
+- Added persistent Scheduled Agent/Web Tasks backed by systemd user timers.
+- Added per-schedule browser authorization: none, managed, headless, or current browser.
+- Added per-schedule stored-credential authorization without exposing secret values to model context.
+- Added semantic credential filling for login fields and improved routing for WordPress, Gmail, Google sign-in, and normal password flows.
+- Authentication challenges such as OTP/authenticator, CAPTCHA, passkeys, and security keys pause for human takeover.
+- Added durable user/assistant chat history shared between Fatir Desktop and Companion.
+- Added desktop Command Center schedule management and chat reopening.
+- Added Companion Chats and Schedules screens with Run Now support.
+- Kept local shell schedules separate from model-driven agent schedules.
+
 ## 1.1.1 — Full-height Command Center
 
 - Fixed Command Center rendering as a short bottom sheet on tall sidebar windows.
