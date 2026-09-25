@@ -13,8 +13,8 @@ android {
         applicationId = "com.fatir.companion"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.1.1-local"
+        versionCode = 3
+        versionName = "0.2.0-tailscale"
     }
 
     buildFeatures {
@@ -47,4 +47,19 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
+}
+
+
+val fatirBrandResDir = layout.buildDirectory.dir("generated/fatirBrandRes")
+
+android.sourceSets.getByName("main").res.srcDir(fatirBrandResDir)
+
+val prepareFatirBranding by tasks.registering(Copy::class) {
+    from(rootProject.file("../ui/assets/fatir-mark.png"))
+    into(fatirBrandResDir.map { it.dir("drawable-nodpi") })
+    rename { "fatir_mark.png" }
+}
+
+tasks.named("preBuild").configure {
+    dependsOn(prepareFatirBranding)
 }
