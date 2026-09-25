@@ -104,3 +104,57 @@ data class TransferItem(
     val detail: String,
     val success: Boolean
 )
+
+
+@Serializable
+data class ChatSessionSummary(
+    val session_id: String,
+    val title: String,
+    val preview: String,
+    val updated_at: String,
+    val messages: Int
+)
+
+@Serializable
+data class ChatSessionsResponse(
+    val sessions: List<ChatSessionSummary> = emptyList()
+)
+
+@Serializable
+data class ChatTurn(
+    val id: String,
+    val session_id: String,
+    val role: String,
+    val text: String,
+    val model: String? = null,
+    val created_at: String
+)
+
+@Serializable
+data class ChatMessagesResponse(
+    val session_id: String,
+    val messages: List<ChatTurn> = emptyList()
+)
+
+@Serializable
+data class AgentScheduleItem(
+    val id: String,
+    val label: String,
+    val prompt: String = "",
+    val trigger_kind: String = "",
+    val trigger: String = "",
+    val browser_mode: String = "none",
+    val credential_ids: List<String> = emptyList(),
+    val timer_state: String = "unknown",
+    val next: String = "",
+    val created_at: String = "",
+    val last_run_at: String? = null,
+    val last_status: String? = null,
+    val last_result: String? = null,
+    val last_session_id: String? = null
+)
+
+@Serializable
+data class AgentSchedulesResponse(
+    val schedules: List<AgentScheduleItem> = emptyList()
+)
