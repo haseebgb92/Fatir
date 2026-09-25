@@ -126,14 +126,15 @@ pub async fn list(state: &SharedState) -> Result<Vec<Value>> {
             .and_then(|m| m.get("content").and_then(Value::as_str))
             .unwrap_or("");
         let meta = meta_by_id.get(&session_id);
+        let source = meta.map(|x| x.source.clone()).unwrap_or_else(|| source_for(&session_id));
         rows.push(json!({
-            "session_id": session_id,
+            "session_id": session_id.clone(),
             "title": meta.map(|x| x.title.clone()).unwrap_or_else(|| clean_title(first_user)),
             "preview": preview.chars().take(180).collect::<String>(),
             "message_count": visible.len(),
             "created_at": meta.map(|x| x.created_at.clone()),
             "updated_at": meta.map(|x| x.updated_at.clone()),
-            "source": meta.map(|x| x.source.clone()).unwrap_or_else(|| source_for(&session_id)),
+            "source": source,
         }));
     }
 
