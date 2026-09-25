@@ -1,0 +1,61 @@
+name: Companion Local MVP
+
+on:
+  push:
+    branches: [companion-local-mvp]
+    paths:
+      - "src-tauri/**"
+      - "companion-android/**"
+      - ".github/workflows/companion-local.yml"
+  workflow_dispatch:
+
+jobs:
+  rust-check:
+    name: Fatir desktop / Rust
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Tauri Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            pkg-config \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cargo check
+        run: cargo check --manifest-path src-tauri/Cargo.toml
+
+  android-debug:
+    name: Android companion / debug APK
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Build debug APK
+        run: gradle -p companion-android assembleDebug --stacktrace
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: fatir-companion-local-debug
+          path: companion-android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
