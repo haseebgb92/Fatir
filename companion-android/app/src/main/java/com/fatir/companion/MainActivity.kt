@@ -117,6 +117,7 @@ private fun FatirApp() {
 
     val transfers = remember { mutableStateListOf<TransferItem>() }
     var pendingDownload by remember { mutableStateOf<FileEntry?>(null) }
+    var attachNextPhoneUploadToChat by remember { mutableStateOf(false) }
 
     var historySessions by remember { mutableStateOf<List<ChatSessionSummary>>(emptyList()) }
     var historyLoading by remember { mutableStateOf(false) }
@@ -156,20 +157,34 @@ private fun FatirApp() {
     }
 
     val uploadPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        val attachToChat = attachNextPhoneUploadToChat
+        attachNextPhoneUploadToChat = false
         if (uri == null || api == null) return@rememberLauncherForActivityResult
         scope.launch {
             val name = displayName(context, uri) ?: "phone-file"
+            val mime = resolver.getType(uri)
             try {
                 val result = api!!.upload(
-                    directory = currentPath,
+                    directory = if (attachToChat) null else currentPath,
                     filename = name,
-                    mime = resolver.getType(uri),
+                    mime = mime,
                     openStream = { resolver.openInputStream(uri) }
                 )
                 transfers.add(0, TransferItem("Uploaded " + name, result.path, true))
+                if (attachToChat && linuxAttachments.none { it.path == result.path }) {
+                    linuxAttachments += FileEntry(
+                        name = result.name,
+                        path = result.path,
+                        is_dir = false,
+                        size = result.bytes,
+                        mime = mime
+                    )
+                    screen = Screen.CHAT
+                }
                 fileRefresh++
             } catch (t: Throwable) {
                 transfers.add(0, TransferItem("Upload failed: " + name, t.message.orEmpty(), false))
+                if (attachToChat) messages += UiMessage(false, "Phone attachment upload failed: " + t.message.orEmpty())
             }
         }
     }
@@ -439,7 +454,10 @@ private fun FatirApp() {
             if (screen == Screen.CHAT) {
                 Composer(
                     composer, { composer = it }, !sending, ::send,
-                    onPhoneFile = { uploadPicker.launch(arrayOf("*/*")) },
+                    onPhoneFile = {
+                        attachNextPhoneUploadToChat = true
+                        uploadPicker.launch(arrayOf("*/*"))
+                    },
                     onLinuxFiles = { screen = Screen.FILES },
                     modifier = Modifier.align(Alignment.BottomCenter)
                 )
