@@ -7,7 +7,7 @@
 
 Fatir is a light Tauri sidebar for Linux Mint/Cinnamon that can operate desktop apps, work with your active browser session, run terminal tasks, manage files and projects, remember useful context, and learn repeatable workflows.
 
-**Current release:** v1.1.1 · **Primary target:** Linux Mint Cinnamon / X11 · **License:** MIT
+**Current release:** v1.2.0 · **Primary target:** Linux Mint Cinnamon / X11 · **License:** MIT
 </div>
 
 ---
