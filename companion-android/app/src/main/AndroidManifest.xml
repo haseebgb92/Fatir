@@ -4,6 +4,8 @@
 
     <application
         android:allowBackup="true"
+        android:icon="@drawable/fatir_mark"
+        android:roundIcon="@drawable/fatir_mark"
         android:label="Fatir Companion"
         android:supportsRtl="true"
         android:theme="@style/Theme.FatirCompanion"
