@@ -49,7 +49,7 @@ private val FatirGreen = Color(0xFF2F8D5B)
 private val FatirRed = Color(0xFFB94A48)
 private val FatirBorder = Color(0xFFE8E1D3)
 
-private enum class Screen { CHAT, FILES, TRANSFERS, SETTINGS }
+private enum class Screen { CHAT, CHATS, SCHEDULES, FILES, TRANSFERS, SETTINGS }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
@@ -108,6 +108,16 @@ private fun FatirApp() {
     var fileLoading by remember { mutableStateOf(false) }
     var fileError by remember { mutableStateOf<String?>(null) }
     var fileRefresh by remember { mutableIntStateOf(0) }
+
+    var chatRows by remember { mutableStateOf<List<ChatSummary>>(emptyList()) }
+    var chatLoading by remember { mutableStateOf(false) }
+    var chatError by remember { mutableStateOf<String?>(null) }
+    var chatRefresh by remember { mutableIntStateOf(0) }
+
+    var scheduleRows by remember { mutableStateOf<List<AgentScheduleItem>>(emptyList()) }
+    var scheduleLoading by remember { mutableStateOf(false) }
+    var scheduleError by remember { mutableStateOf<String?>(null) }
+    var scheduleRefresh by remember { mutableIntStateOf(0) }
 
     val transfers = remember { mutableStateListOf<TransferItem>() }
     var pendingDownload by remember { mutableStateOf<FileEntry?>(null) }
@@ -200,6 +210,36 @@ private fun FatirApp() {
         }
     }
 
+    LaunchedEffect(screen, chatRefresh) {
+        if (screen == Screen.CHATS) {
+            chatLoading = true
+            chatError = null
+            try {
+                chatRows = api!!.chats().chats
+            } catch (t: Throwable) {
+                chatRows = emptyList()
+                chatError = t.message ?: "Unable to load Fatir chats"
+            } finally {
+                chatLoading = false
+            }
+        }
+    }
+
+    LaunchedEffect(screen, scheduleRefresh) {
+        if (screen == Screen.SCHEDULES) {
+            scheduleLoading = true
+            scheduleError = null
+            try {
+                scheduleRows = api!!.agentSchedules().schedules
+            } catch (t: Throwable) {
+                scheduleRows = emptyList()
+                scheduleError = t.message ?: "Unable to load scheduled agents"
+            } finally {
+                scheduleLoading = false
+            }
+        }
+    }
+
     fun send() {
         val text = composer.trim()
         if (text.isBlank() || sending) return
@@ -214,6 +254,7 @@ private fun FatirApp() {
                 sessionId = result.session_id
                 messages += UiMessage(false, result.response.text, result.response.model)
                 pending = result.response.pending
+                chatRefresh++
             } catch (t: Throwable) {
                 messages += UiMessage(false, "Connection error: " + t.message.orEmpty())
             } finally {
@@ -262,6 +303,103 @@ private fun FatirApp() {
                         }
                     },
                     onRemoveAttachment = { linuxAttachments.remove(it) }
+                )
+
+
+                Screen.CHATS -> ChatHistoryScreen(
+                    chats = chatRows,
+                    loading = chatLoading,
+                    error = chatError,
+                    onRefresh = { chatRefresh++ },
+                    onNewChat = {
+                        sessionId = null
+                        messages.clear()
+                        pending = null
+                        composer = ""
+                        screen = Screen.CHAT
+                    },
+                    onOpen = { chat ->
+                        scope.launch {
+                            try {
+                                val saved = api!!.chatHistory(chat.session_id)
+                                sessionId = saved.session_id
+                                messages.clear()
+                                saved.messages.forEach { msg ->
+                                    messages += UiMessage(msg.role == "user", msg.content, null)
+                                }
+                                pending = null
+                                screen = Screen.CHAT
+                            } catch (t: Throwable) {
+                                chatError = t.message ?: "Unable to open chat"
+                            }
+                        }
+                    }
+                )
+
+                Screen.SCHEDULES -> AgentSchedulesScreen(
+                    schedules = scheduleRows,
+                    loading = scheduleLoading,
+                    error = scheduleError,
+                    onRefresh = { scheduleRefresh++ },
+                    onOpenChat = { schedule ->
+                        scope.launch {
+                            try {
+                                val saved = api!!.chatHistory(schedule.session_id)
+                                sessionId = saved.session_id
+                                messages.clear()
+                                saved.messages.forEach { msg ->
+                                    messages += UiMessage(msg.role == "user", msg.content, null)
+                                }
+                                pending = null
+                                screen = Screen.CHAT
+                            } catch (t: Throwable) {
+                                scheduleError = t.message ?: "Unable to open scheduled task chat"
+                            }
+                        }
+                    },
+                    onRunNow = { schedule ->
+                        scope.launch {
+                            try {
+                                api!!.runAgentSchedule(schedule.id)
+                                scheduleRefresh++
+                            } catch (t: Throwable) {
+                                scheduleError = t.message ?: "Unable to run schedule"
+                            }
+                        }
+                    },
+                    onApprovePending = { schedule ->
+                        val actionId = schedule.last_pending_action
+                        if (!actionId.isNullOrBlank()) {
+                            scope.launch {
+                                try {
+                                    val response = api!!.approve(actionId)
+                                    sessionId = schedule.session_id
+                                    messages.clear()
+                                    val saved = api!!.chatHistory(schedule.session_id)
+                                    saved.messages.forEach { msg ->
+                                        messages += UiMessage(msg.role == "user", msg.content, null)
+                                    }
+                                    messages += UiMessage(false, response.text, response.model)
+                                    pending = response.pending
+                                    scheduleRefresh++
+                                    chatRefresh++
+                                    screen = Screen.CHAT
+                                } catch (t: Throwable) {
+                                    scheduleError = t.message ?: "Unable to approve scheduled action"
+                                }
+                            }
+                        }
+                    },
+                    onCancel = { schedule ->
+                        scope.launch {
+                            try {
+                                api!!.cancelAgentSchedule(schedule.id)
+                                scheduleRefresh++
+                            } catch (t: Throwable) {
+                                scheduleError = t.message ?: "Unable to cancel schedule"
+                            }
+                        }
+                    }
                 )
 
                 Screen.FILES -> FilesScreen(
@@ -404,6 +542,8 @@ private fun Drawer(device: String, selected: Screen, onSelect: (Screen) -> Unit)
                 Text(device, color = FatirMuted, fontSize = 13.sp)
             }
             DrawerItem("Chat", Icons.Outlined.Chat, Screen.CHAT, selected, onSelect)
+            DrawerItem("Chats", Icons.Outlined.History, Screen.CHATS, selected, onSelect)
+            DrawerItem("Schedules", Icons.Outlined.Schedule, Screen.SCHEDULES, selected, onSelect)
             DrawerItem("Linux Files", Icons.Outlined.Folder, Screen.FILES, selected, onSelect)
             DrawerItem("Transfers", Icons.Outlined.SwapVert, Screen.TRANSFERS, selected, onSelect)
             DrawerItem("Settings", Icons.Outlined.Settings, Screen.SETTINGS, selected, onSelect)
@@ -703,6 +843,142 @@ private fun FilesScreen(
                         else {
                             IconButton(onClick = { onAttach(entry) }) { Icon(Icons.Outlined.AttachFile, "Attach") }
                             IconButton(onClick = { onDownload(entry) }) { Icon(Icons.Outlined.Download, "Download") }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChatHistoryScreen(
+    chats: List<ChatSummary>,
+    loading: Boolean,
+    error: String?,
+    onRefresh: () -> Unit,
+    onNewChat: () -> Unit,
+    onOpen: (ChatSummary) -> Unit
+) {
+    Column(Modifier.fillMaxSize().padding(top = 104.dp, start = 16.dp, end = 16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Chats", fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+                Text("Shared with Fatir Desktop", color = FatirMuted, fontSize = 12.sp)
+            }
+            IconButton(onClick = onRefresh) { Icon(Icons.Outlined.Refresh, "Refresh chats") }
+            FilledTonalIconButton(onClick = onNewChat) { Icon(Icons.Outlined.AddComment, "New chat") }
+        }
+        if (loading) LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 12.dp))
+        if (!error.isNullOrBlank()) Text(error, color = FatirRed, modifier = Modifier.padding(top = 12.dp))
+        if (!loading && chats.isEmpty() && error.isNullOrBlank()) {
+            InfoCard("No saved chats yet", "Conversations from Fatir Desktop, Companion and scheduled agents will appear here.")
+        } else {
+            LazyColumn(
+                contentPadding = PaddingValues(top = 14.dp, bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(chats, key = { it.session_id }) { chat ->
+                    Surface(
+                        shape = RoundedCornerShape(18.dp),
+                        color = FatirSurface,
+                        border = BorderStroke(1.dp, FatirBorder),
+                        modifier = Modifier.fillMaxWidth().clickable { onOpen(chat) }
+                    ) {
+                        Column(Modifier.padding(14.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(chat.title, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(chat.source.replaceFirstChar { it.uppercase() }, color = FatirGold, fontSize = 10.sp)
+                            }
+                            if (chat.preview.isNotBlank()) {
+                                Text(chat.preview, color = FatirMuted, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 5.dp))
+                            }
+                            Text("${chat.message_count} messages", color = FatirMuted, fontSize = 10.sp, modifier = Modifier.padding(top = 7.dp))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AgentSchedulesScreen(
+    schedules: List<AgentScheduleItem>,
+    loading: Boolean,
+    error: String?,
+    onRefresh: () -> Unit,
+    onOpenChat: (AgentScheduleItem) -> Unit,
+    onRunNow: (AgentScheduleItem) -> Unit,
+    onApprovePending: (AgentScheduleItem) -> Unit,
+    onCancel: (AgentScheduleItem) -> Unit
+) {
+    Column(Modifier.fillMaxSize().padding(top = 104.dp, start = 16.dp, end = 16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Scheduled agents", fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+                Text("Persistent Fatir and web automations", color = FatirMuted, fontSize = 12.sp)
+            }
+            IconButton(onClick = onRefresh) { Icon(Icons.Outlined.Refresh, "Refresh schedules") }
+        }
+        if (loading) LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 12.dp))
+        if (!error.isNullOrBlank()) Text(error, color = FatirRed, modifier = Modifier.padding(top = 12.dp))
+        if (!loading && schedules.isEmpty() && error.isNullOrBlank()) {
+            InfoCard("No scheduled agents", "Ask Fatir to create one, for example: “Every morning at 9 check Gmail and summarize what needs attention.”")
+        } else {
+            LazyColumn(
+                contentPadding = PaddingValues(top = 14.dp, bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                items(schedules, key = { it.id }) { item ->
+                    val waiting = item.last_status == "waiting_user" || item.last_status == "waiting_approval"
+                    val statusColor = when (item.last_status) {
+                        "completed" -> FatirGreen
+                        "failed" -> FatirRed
+                        "waiting_user", "waiting_approval" -> FatirGold
+                        else -> FatirMuted
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(18.dp),
+                        color = FatirSurface,
+                        border = BorderStroke(1.dp, if (waiting) Color(0xFFE6C98A) else FatirBorder)
+                    ) {
+                        Column(Modifier.padding(14.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(item.label, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                                Text(
+                                    (item.last_status ?: "scheduled").replace('_', ' '),
+                                    color = statusColor,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                            Text(
+                                "${item.execution_mode.replace('_', ' ')} · ${item.trigger}",
+                                color = FatirMuted,
+                                fontSize = 11.sp,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                            if (item.last_result?.isNotBlank() == true) {
+                                MarkdownText(item.last_result)
+                                Spacer(Modifier.height(6.dp))
+                            }
+                            if (item.next.isNotBlank()) {
+                                Text("Next: ${item.next}", color = FatirMuted, fontSize = 10.sp)
+                            }
+                            Row(
+                                modifier = Modifier.padding(top = 10.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                TextButton(onClick = { onOpenChat(item) }) { Text("Chat") }
+                                TextButton(onClick = { onRunNow(item) }) { Text("Run now") }
+                                if (!item.last_pending_action.isNullOrBlank()) {
+                                    Button(onClick = { onApprovePending(item) }) { Text("Approve") }
+                                }
+                                TextButton(onClick = { onCancel(item) }) {
+                                    Text("Cancel", color = FatirRed)
+                                }
+                            }
                         }
                     }
                 }
