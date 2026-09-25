@@ -8,6 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import okhttp3.MediaType
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
@@ -48,6 +49,36 @@ class FatirApi(
     suspend fun chat(requestBody: ChatRequest): ChatEnvelope = withContext(Dispatchers.IO) {
         val request = authedRequest("$baseUrl/api/v1/chat")
             .post(json.encodeToString(requestBody).jsonBody())
+            .build()
+        executeJson(request)
+    }
+
+
+    suspend fun chatSessions(limit: Int = 50): ChatSessionsResponse = withContext(Dispatchers.IO) {
+        val url = "$baseUrl/api/v1/chats".toHttpUrl().newBuilder()
+            .addQueryParameter("limit", limit.coerceIn(1, 200).toString())
+            .build()
+        executeJson(authedRequest(url.toString()).get().build())
+    }
+
+    suspend fun chatMessages(sessionId: String, limit: Int = 300): ChatMessagesResponse = withContext(Dispatchers.IO) {
+        val url = "$baseUrl/api/v1/chats/messages".toHttpUrl().newBuilder()
+            .addQueryParameter("session_id", sessionId)
+            .addQueryParameter("limit", limit.coerceIn(1, 1000).toString())
+            .build()
+        executeJson(authedRequest(url.toString()).get().build())
+    }
+
+    suspend fun agentSchedules(): AgentSchedulesResponse = withContext(Dispatchers.IO) {
+        executeJson(authedRequest("$baseUrl/api/v1/agent/schedules").get().build())
+    }
+
+    suspend fun runAgentSchedule(id: String): JsonObject = withContext(Dispatchers.IO) {
+        val url = "$baseUrl/api/v1/agent/schedule/run".toHttpUrl().newBuilder()
+            .addQueryParameter("id", id)
+            .build()
+        val request = authedRequest(url.toString())
+            .post(ByteArray(0).toRequestBody(null))
             .build()
         executeJson(request)
     }
