@@ -26,6 +26,8 @@ mod app_playbooks;
 mod permissions;
 mod schedules;
 mod companion;
+mod chats;
+mod agent_schedules;
 
 use models::{AgentResponse, Attachment, SystemSnapshot};
 use ollama::SharedState;
@@ -61,6 +63,11 @@ struct ShareUiState {
 fn extract_share_args(args: &[String]) -> Vec<String> {
     let Some(pos) = args.iter().position(|x| x == "--share") else { return Vec::new(); };
     args.iter().skip(pos + 1).filter(|x| !x.trim().is_empty()).cloned().collect()
+}
+
+fn extract_agent_schedule_arg(args: &[String]) -> Option<String> {
+    let pos = args.iter().position(|x| x == "--run-agent-schedule")?;
+    args.get(pos + 1).filter(|x| !x.trim().is_empty()).cloned()
 }
 
 fn set_pending_share(app: &tauri::AppHandle, args: &[String]) {
@@ -176,6 +183,43 @@ async fn send_message(
     mode: String,
 ) -> Result<AgentResponse, String> {
     ollama::send_message(state.inner().clone(), &session_id, &text, attachments, &mode).await.map_err(|e| e.to_string())
+}
+
+
+#[tauri::command]
+async fn chat_list(state: tauri::State<'_, SharedState>) -> Result<Vec<serde_json::Value>, String> {
+    chats::list(state.inner()).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn chat_history(
+    state: tauri::State<'_, SharedState>,
+    session_id: String,
+) -> Result<serde_json::Value, String> {
+    chats::history(state.inner(), &session_id).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn chat_remove(
+    state: tauri::State<'_, SharedState>,
+    session_id: String,
+) -> Result<serde_json::Value, String> {
+    chats::remove(state.inner(), &session_id).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn agent_schedule_list() -> Result<Vec<serde_json::Value>, String> {
+    agent_schedules::list().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn agent_schedule_run_now(id: String) -> Result<serde_json::Value, String> {
+    agent_schedules::run_now(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn agent_schedule_cancel(id: String) -> Result<serde_json::Value, String> {
+    agent_schedules::cancel(&id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -377,11 +421,12 @@ fn v1_status() -> Result<serde_json::Value, String> {
     let projects=projects::list().map_err(|e|e.to_string())?;
     let terminals=terminal_sessions::list().map_err(|e|e.to_string())?;
     let schedules=schedules::list().map_err(|e|e.to_string())?;
+    let agent_schedules=agent_schedules::list().map_err(|e|e.to_string())?;
     let failures=memory::failure_summary(300).map_err(|e|e.to_string())?;
     Ok(serde_json::json!({
         "version":env!("CARGO_PKG_VERSION"),"engine":orchestrator::status(),
         "active_tasks":tasks.len(),"running_jobs":jobs.iter().filter(|j|j.get("status").and_then(serde_json::Value::as_str)==Some("running")).count(),
-        "projects":projects.len(),"terminal_sessions":terminals.len(),"schedules":schedules.len(),"teach":teach::status(),"permissions":permissions::status(),"computer_control":pointer::status(),"failures":failures
+        "projects":projects.len(),"terminal_sessions":terminals.len(),"schedules":schedules.len(),"agent_schedules":agent_schedules.len(),"teach":teach::status(),"permissions":permissions::status(),"computer_control":pointer::status(),"failures":failures
     }))
 }
 
@@ -539,9 +584,19 @@ fn main() {
     let startup_args: Vec<String> = std::env::args().collect();
     let background = startup_args.iter().any(|a| a == "--background");
     let startup_share = extract_share_args(&startup_args);
+    let startup_agent_schedule = extract_agent_schedule_arg(&startup_args);
 
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            if let Some(id) = extract_agent_schedule_arg(&args) {
+                let state = app.state::<SharedState>().inner().clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(err) = agent_schedules::execute(state, &id).await {
+                        eprintln!("Fatir scheduled agent run failed: {err}");
+                    }
+                });
+                return;
+            }
             set_pending_share(app, &args);
             show_panel(app);
         }))
@@ -556,6 +611,12 @@ fn main() {
             save_api_key,
             clear_api_key,
             send_message,
+            chat_list,
+            chat_history,
+            chat_remove,
+            agent_schedule_list,
+            agent_schedule_run_now,
+            agent_schedule_cancel,
             cancel_run,
             open_local_path,
             open_external_url,
@@ -627,7 +688,15 @@ fn main() {
                     eprintln!("Fatir Companion LAN service failed: {err}");
                 }
             });
-            if !background || !startup_share.is_empty() { show_panel(app.handle()); }
+            if let Some(id) = startup_agent_schedule.clone() {
+                let state = app.state::<SharedState>().inner().clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(err) = agent_schedules::execute(state, &id).await {
+                        eprintln!("Fatir scheduled agent run failed: {err}");
+                    }
+                });
+            }
+            if (!background || !startup_share.is_empty()) && startup_agent_schedule.is_none() { show_panel(app.handle()); }
             Ok(())
         })
         .on_window_event(|window, event| {
