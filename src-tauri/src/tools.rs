@@ -1,4 +1,4 @@
-use crate::{adaptive, browser_memory, cleanup, credentials, desktop, jobs, memory, pointer, rollback, routines, share, software, tasks, teach, proactive, projects, terminal_sessions, orchestrator, app_playbooks, schedules, models::{LargestFile, ResourceRef, SystemSnapshot, TraceItem}};
+use crate::{adaptive, browser_memory, cleanup, credentials, desktop, jobs, memory, pointer, rollback, routines, share, software, tasks, teach, proactive, projects, terminal_sessions, orchestrator, app_playbooks, schedules, agent_schedules, models::{LargestFile, ResourceRef, SystemSnapshot, TraceItem}};
 use anyhow::{anyhow, Context, Result};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use futures_util::{SinkExt, StreamExt};
@@ -123,6 +123,10 @@ pub fn tool_definitions() -> Vec<Value> {
         tool("scheduled_job_create", "Create a persistent local systemd-user timer for a shell command. Browser/headless tools are never implied. Requires approval according to the shell policy.", json!({"type":"object","properties":{"label":{"type":"string"},"command":{"type":"string"},"cwd":{"type":"string"},"trigger_kind":{"type":"string","enum":["delay","calendar"]},"trigger":{"type":"string","description":"For delay use values like 10m/2h; for calendar use a systemd calendar expression."}},"required":["label","command","trigger_kind","trigger"],"additionalProperties":false})),
         tool("scheduled_job_list", "List persistent local Fatir schedules and timer state. Read-only.", json!({"type":"object","properties":{},"additionalProperties":false})),
         tool("scheduled_job_cancel", "Cancel and forget a Fatir local scheduled command. Requires approval according to background-job policy.", json!({"type":"object","properties":{"id":{"type":"string"}},"required":["id"],"additionalProperties":false})),
+        tool("agent_schedule_create", "Create a persistent Fatir agent schedule that can wake the model later for local or web work. Web execution mode must be explicit. Specific stored credential IDs may be pre-authorized for this schedule only. Creating an agent schedule always requires approval.", json!({"type":"object","properties":{"label":{"type":"string"},"prompt":{"type":"string"},"trigger_kind":{"type":"string","enum":["delay","calendar"]},"trigger":{"type":"string","description":"For delay use values like 10m/2h; for calendar use a systemd OnCalendar expression."},"execution_mode":{"type":"string","enum":["agent","managed_browser","active_browser","headless_browser"]},"credential_ids":{"type":"array","items":{"type":"string"},"maxItems":12},"verification_required":{"type":"boolean"}},"required":["label","prompt","trigger_kind","trigger","execution_mode"],"additionalProperties":false})),
+        tool("agent_schedule_list", "List persistent Fatir model/web schedules, next run, execution mode and latest status/result. Read-only.", json!({"type":"object","properties":{},"additionalProperties":false})),
+        tool("agent_schedule_run_now", "Queue an existing Fatir agent/web schedule to run immediately using its stored execution and credential authorization. Requires approval.", json!({"type":"object","properties":{"id":{"type":"string"}},"required":["id"],"additionalProperties":false})),
+        tool("agent_schedule_cancel", "Disable and remove a persistent Fatir agent/web schedule. Requires approval.", json!({"type":"object","properties":{"id":{"type":"string"}},"required":["id"],"additionalProperties":false})),
         tool("checkpoint_files", "Create rollback checkpoints for local files before editing configuration or running a potentially mutating command. Read-only backup creation; supports files up to 100 MB each.", json!({"type":"object","properties":{"label":{"type":"string"},"paths":{"type":"array","items":{"type":"string"},"maxItems":12}},"required":["label","paths"],"additionalProperties":false})),
         tool("rollback_list", "List available local rollback points created by Fatir.", json!({"type":"object","properties":{"limit":{"type":"integer","minimum":1,"maximum":100}},"additionalProperties":false})),
         tool("rollback_execute", "Restore one Fatir rollback point. Requires approval because it changes the current filesystem/software state.", json!({"type":"object","properties":{"id":{"type":"string"}},"required":["id"],"additionalProperties":false})),
@@ -131,6 +135,7 @@ pub fn tool_definitions() -> Vec<Value> {
         tool("credential_list", "List names/accounts of credentials stored in Fatir's Linux keyring. Never returns secret values.", json!({"type":"object","properties":{},"additionalProperties":false})),
         tool("run_shell_with_credentials", "Run a user shell command with selected stored credentials injected only as environment variables. Secret values never enter model context or action history. Requires approval.", json!({"type":"object","properties":{"command":{"type":"string"},"cwd":{"type":"string"},"credentials":{"type":"object","additionalProperties":{"type":"string"}},"timeout_seconds":{"type":"integer","minimum":1,"maximum":900}},"required":["command","credentials"],"additionalProperties":false})),
         tool("browser_fill_credential", "Fill a browser field using a stored Fatir credential without revealing the secret to the model. Requires explicit approval.", json!({"type":"object","properties":{"element_id":{"type":"string"},"credential_id":{"type":"string"}},"required":["element_id","credential_id"],"additionalProperties":false})),
+        tool("browser_fill_credential_by_label", "Find a visible browser secret/password field by semantic label/placeholder/name and fill it directly from a stored Fatir credential. The secret never enters model context. Interactive use requires approval; a scheduled agent may use only credential IDs explicitly authorized when that schedule was created.", json!({"type":"object","properties":{"label":{"type":"string"},"credential_id":{"type":"string"}},"required":["label","credential_id"],"additionalProperties":false})),
         tool("delegate_specialist", "Ask a specialist sub-agent for a focused second opinion or plan. Roles: system, software, browser, code, research. The specialist cannot make changes; Fatir remains responsible for execution and verification.", json!({"type":"object","properties":{"role":{"type":"string","enum":["system","software","browser","code","research"]},"task":{"type":"string"},"context":{"type":"string"}},"required":["role","task"],"additionalProperties":false})),
         tool("recent_actions", "Read Fatir's recent local action history so you can answer what was changed or done previously.", json!({"type":"object","properties":{"limit":{"type":"integer","minimum":1,"maximum":100}},"additionalProperties":false})),
         tool("recent_activity", "Read Fatir's recent locally learned activity context: app focus changes, browser visits and terminal command history. Read-only. Use only when relevant to the user's current task.", json!({"type":"object","properties":{"limit":{"type":"integer","minimum":1,"maximum":200}},"additionalProperties":false})),
@@ -196,7 +201,7 @@ pub fn tool_definitions_for_hint(hint: &str) -> Vec<Value> {
     if browser_request && !explicit_headless {
         allowed.extend([
             "browser_open_url","browser_get_url","browser_page_summary","browser_click_text","browser_fill_by_label",
-            "browser_elements","browser_click_element","browser_fill_element","browser_fill_credential","browser_upload_file",
+            "browser_elements","browser_click_element","browser_fill_element","browser_fill_credential","browser_fill_credential_by_label","credential_list","browser_upload_file",
             "browser_key","browser_scroll","browser_observe","browser_click","browser_type","web_search","share_whatsapp_send","share_email_draft","share_latest_screenshot",
             "browser_tabs","browser_new_tab","browser_select_tab","browser_close_tab","browser_extract_structure",
             "browser_network_recent","browser_network_request","browser_console_messages","browser_diagnostics","browser_memory_current",
@@ -237,7 +242,7 @@ pub fn tool_definitions_for_hint(hint: &str) -> Vec<Value> {
         allowed.extend(["project_inspect","project_remember","project_list","project_forget","terminal_session_create","terminal_session_list","terminal_session_set_cwd","terminal_session_exec","terminal_session_history"]);
     }
     if any(&["schedule","scheduled","scheduler","daily","weekly","monthly","every day","every week","every month","remind me","reminder","timer","in 10 minutes","in 30 minutes","in an hour"]) {
-        allowed.extend(["scheduled_job_create","scheduled_job_list","scheduled_job_cancel","background_job_start","background_job_list","background_job_log","background_job_cancel"]);
+        allowed.extend(["scheduled_job_create","scheduled_job_list","scheduled_job_cancel","agent_schedule_create","agent_schedule_list","agent_schedule_run_now","agent_schedule_cancel","credential_list","background_job_start","background_job_list","background_job_log","background_job_cancel"]);
     }
     if any(&["routine","workflow","again","as before","repeat","automation","automate","teach mode","teach me","record this workflow","record workflow","record task"]) {
         allowed.extend(["routine_create","routine_capture_recent","routine_list_saved","routine_prepare_run","routine_remove","teach_start","teach_status","teach_stop","teach_cancel"]);
@@ -359,7 +364,9 @@ fn shell_command_risk(command:&str)-> &'static str {
 pub fn risk_for(tool: &str, args:&Value) -> &'static str {
     match tool {
         "install_apt" | "install_deb" | "run_privileged_command" | "desktop_repair_accessibility" => "system",
-        "browser_fill_credential" | "desktop_fill_credential" => "sensitive",
+        "browser_fill_credential" | "browser_fill_credential_by_label" | "desktop_fill_credential" => "sensitive",
+        "agent_schedule_create" => "sensitive",
+        "agent_schedule_run_now" | "agent_schedule_cancel" => "change",
         "run_shell_with_credentials" => "sensitive",
         "run_shell_command" | "terminal_session_exec" | "background_job_start" | "scheduled_job_create" => shell_command_risk(args.get("command").and_then(Value::as_str).unwrap_or("")),
         "install_flatpak" | "download_file" | "extract_archive" | "create_desktop_entry" | "background_job_cancel" | "scheduled_job_cancel" | "write_text_file" | "copy_file" | "move_path" | "create_directory" | "routine_capture_recent" | "routine_remove" | "project_forget" | "terminal_session_close" => "change",
@@ -387,6 +394,10 @@ pub fn summary_for(tool: &str, args: &Value) -> String {
         "run_privileged_command" => format!("Run as administrator: {}", shorten(args.get("command").and_then(Value::as_str).unwrap_or(""), 140)),
         "run_shell_with_credentials" => format!("Run command with stored credentials: {}", shorten(args.get("command").and_then(Value::as_str).unwrap_or(""), 140)),
         "browser_fill_credential" => "Use a stored credential in the browser".into(),
+        "browser_fill_credential_by_label" => format!("Use a stored credential in browser field {}", args.get("label").and_then(Value::as_str).unwrap_or("secret field")),
+        "agent_schedule_create" => format!("Create persistent agent schedule {}", args.get("label").and_then(Value::as_str).unwrap_or("schedule")),
+        "agent_schedule_run_now" => format!("Run agent schedule {} now", args.get("id").and_then(Value::as_str).unwrap_or("")),
+        "agent_schedule_cancel" => format!("Cancel agent schedule {}", args.get("id").and_then(Value::as_str).unwrap_or("")),
         "browser_upload_file" => {
             let path=args.get("path").and_then(Value::as_str).unwrap_or("file");
             let name=Path::new(path).file_name().and_then(|x|x.to_str()).unwrap_or(path);
@@ -548,6 +559,23 @@ pub async fn execute(tool: &str, args: &Value, api_key: Option<&str>) -> Result<
         "scheduled_job_create" => {validate_shell_command(required_str(args,"command")?)?;serde_json::to_string_pretty(&schedules::create(required_str(args,"label")?,required_str(args,"command")?,args.get("cwd").and_then(Value::as_str),required_str(args,"trigger_kind")?,required_str(args,"trigger")?)?)?},
         "scheduled_job_list" => serde_json::to_string_pretty(&schedules::list()?)?,
         "scheduled_job_cancel" => serde_json::to_string_pretty(&schedules::cancel(required_str(args,"id")?)?)?,
+        "agent_schedule_create" => {
+            let credential_ids = args.get("credential_ids").and_then(Value::as_array)
+                .map(|rows| rows.iter().filter_map(Value::as_str).map(str::to_string).collect::<Vec<_>>())
+                .unwrap_or_default();
+            serde_json::to_string_pretty(&agent_schedules::create(
+                required_str(args,"label")?,
+                required_str(args,"prompt")?,
+                required_str(args,"trigger_kind")?,
+                required_str(args,"trigger")?,
+                required_str(args,"execution_mode")?,
+                &credential_ids,
+                args.get("verification_required").and_then(Value::as_bool).unwrap_or(true),
+            )?)?
+        },
+        "agent_schedule_list" => serde_json::to_string_pretty(&agent_schedules::list()?)?,
+        "agent_schedule_run_now" => serde_json::to_string_pretty(&agent_schedules::run_now(required_str(args,"id")?)?)?,
+        "agent_schedule_cancel" => serde_json::to_string_pretty(&agent_schedules::cancel(required_str(args,"id")?)?)?,
         "checkpoint_files" => { let paths=args.get("paths").and_then(Value::as_array).ok_or_else(||anyhow!("Missing paths"))?.iter().filter_map(Value::as_str).map(|x|expand_path(x).display().to_string()).collect::<Vec<_>>(); serde_json::to_string_pretty(&rollback::checkpoint(&paths, required_str(args,"label")?)?)? },
         "rollback_list" => serde_json::to_string_pretty(&rollback::list(args.get("limit").and_then(Value::as_u64).unwrap_or(30) as usize)?)?,
         "rollback_execute" => serde_json::to_string_pretty(&rollback::execute(required_str(args,"id")?)?)?,
@@ -556,6 +584,7 @@ pub async fn execute(tool: &str, args: &Value, api_key: Option<&str>) -> Result<
         "credential_list" => serde_json::to_string_pretty(&credentials::list()?)?,
         "run_shell_with_credentials" => run_shell_with_credentials(required_str(args,"command")?, args.get("cwd").and_then(Value::as_str), args.get("credentials").and_then(Value::as_object).ok_or_else(||anyhow!("Missing credentials map"))?, args.get("timeout_seconds").and_then(Value::as_u64).unwrap_or(180)).await?,
         "browser_fill_credential" => browser_fill_credential(required_str(args,"element_id")?, required_str(args,"credential_id")?).await?,
+        "browser_fill_credential_by_label" => browser_fill_credential_by_label(required_str(args,"label")?, required_str(args,"credential_id")?).await?,
         "recent_actions" => serde_json::to_string_pretty(&memory::recent_actions(args.get("limit").and_then(Value::as_u64).unwrap_or(30) as usize)?)?,
         "recent_activity" => serde_json::to_string_pretty(&memory::recent_activity(args.get("limit").and_then(Value::as_u64).unwrap_or(40) as usize)?)?,
         "routine_summary" => serde_json::to_string_pretty(&memory::routine_summary(700)?)?,
@@ -2301,6 +2330,45 @@ async fn browser_fill_credential(element_id: &str, credential_id: &str) -> Resul
     cdp_command("Input.insertText",json!({"text":secret})).await?;
     drop(secret);
     Ok(serde_json::to_string_pretty(&json!({"ok":true,"element_id":element_id,"credential_used":credential_id,"secret":"[not exposed]","engine":"direct-cdp-secret-safe"}))?)
+}
+
+
+async fn browser_fill_credential_by_label(label: &str, credential_id: &str) -> Result<String> {
+    // Secret-safe semantic fill: the credential value stays inside this Rust process
+    // and is injected directly through CDP. The model only receives metadata/result.
+    let secret = credentials::secret(credential_id)?;
+    let label_js = serde_json::to_string(label)?;
+    let script = format!(r#"(() => {{
+      const wanted={label_js}.toLowerCase().replace(/\s+/g,' ').trim();
+      const clean=s=>(s||'').replace(/\s+/g,' ').trim();
+      const visible=el=>{{const r=el.getBoundingClientRect(),s=getComputedStyle(el);return r.width>1&&r.height>1&&s.visibility!=='hidden'&&s.display!=='none'&&!el.disabled;}};
+      const labelFor=el=>{{let a=[el.getAttribute('aria-label'),el.getAttribute('placeholder'),el.getAttribute('name'),el.getAttribute('autocomplete'),el.getAttribute('id')].filter(Boolean).join(' ');if(el.id){{const l=document.querySelector('label[for="'+CSS.escape(el.id)+'"]');if(l)a+=' '+(l.innerText||'');}}const parent=el.closest('label');if(parent)a+=' '+(parent.innerText||'');return clean(a);}};
+      const fields=[...document.querySelectorAll('input:not([type="hidden"]),textarea,[contenteditable="true"]')].filter(visible);
+      const ranked=fields.map((x,i)=>{{const t=labelFor(x),l=t.toLowerCase();let score=l===wanted?150:l.includes(wanted)?100:(wanted.includes(l)&&l.length>2?55:0);if(x.type==='password'&&(wanted.includes('password')||wanted.includes('passcode')||wanted.includes('secret')))score+=45;return{{x,t,score,i}};}}).filter(x=>x.score>0).sort((a,b)=>b.score-a.score||a.i-b.i);
+      const el=ranked[0]?.x;
+      if(!el)return{{ok:false,error:'Could not safely resolve a visible credential field with that label'}};
+      el.scrollIntoView({{block:'center',inline:'center'}});el.focus();
+      return{{ok:true,label:labelFor(el),type:el.getAttribute('type')||'',autocomplete:el.getAttribute('autocomplete')||''}};
+    }})()"#);
+    let out = cdp_command("Runtime.evaluate", json!({"expression":script,"returnByValue":true})).await?;
+    let v = out.pointer("/result/value").cloned().unwrap_or_else(||json!({}));
+    if v.get("ok").and_then(Value::as_bool) != Some(true) {
+        drop(secret);
+        return Err(anyhow!("{}", v.get("error").and_then(Value::as_str).unwrap_or("Could not safely resolve credential field")));
+    }
+    cdp_command("Input.dispatchKeyEvent",json!({"type":"keyDown","key":"a","code":"KeyA","modifiers":2})).await?;
+    cdp_command("Input.dispatchKeyEvent",json!({"type":"keyUp","key":"a","code":"KeyA","modifiers":2})).await?;
+    cdp_command("Input.dispatchKeyEvent",json!({"type":"keyDown","key":"Backspace"})).await?;
+    cdp_command("Input.dispatchKeyEvent",json!({"type":"keyUp","key":"Backspace"})).await?;
+    cdp_command("Input.insertText",json!({"text":secret})).await?;
+    drop(secret);
+    Ok(serde_json::to_string_pretty(&json!({
+        "ok":true,
+        "label":label,
+        "credential_used":credential_id,
+        "secret":"[not exposed]",
+        "engine":"direct-cdp-semantic-secret-safe"
+    }))?)
 }
 
 async fn run_privileged_command(command: &str, timeout_seconds: u64) -> Result<String> {
