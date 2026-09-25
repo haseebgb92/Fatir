@@ -25,6 +25,8 @@ mod terminal_sessions;
 mod app_playbooks;
 mod permissions;
 mod schedules;
+mod chat_history;
+mod agent_schedules;
 mod companion;
 
 use models::{AgentResponse, Attachment, SystemSnapshot};
@@ -104,6 +106,34 @@ struct AppStatus {
 #[tauri::command]
 fn companion_status(state: tauri::State<'_, companion::CompanionService>) -> companion::CompanionInfo {
     state.info()
+}
+
+#[tauri::command]
+fn chat_sessions(limit: Option<usize>) -> Vec<chat_history::ChatSessionSummary> {
+    chat_history::sessions(limit.unwrap_or(50))
+}
+
+#[tauri::command]
+fn chat_messages(session_id: String, limit: Option<usize>) -> Vec<chat_history::ChatTurn> {
+    chat_history::messages(&session_id, limit.unwrap_or(300))
+}
+
+#[tauri::command]
+fn agent_schedule_list() -> Result<Vec<serde_json::Value>, String> {
+    agent_schedules::list().map_err(|e|e.to_string())
+}
+
+#[tauri::command]
+fn agent_schedule_cancel(id:String) -> Result<serde_json::Value, String> {
+    agent_schedules::cancel(&id).map_err(|e|e.to_string())
+}
+
+#[tauri::command]
+async fn agent_schedule_run_now(
+    state: tauri::State<'_, SharedState>,
+    id:String
+) -> Result<serde_json::Value, String> {
+    agent_schedules::run(state.inner().clone(),&id).await.map_err(|e|e.to_string())
 }
 
 #[tauri::command]
@@ -552,6 +582,11 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             app_status,
             companion_status,
+            chat_sessions,
+            chat_messages,
+            agent_schedule_list,
+            agent_schedule_cancel,
+            agent_schedule_run_now,
             list_models,
             save_api_key,
             clear_api_key,
