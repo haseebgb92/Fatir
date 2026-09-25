@@ -207,7 +207,7 @@ assert 'Chrome DevTools MCP' in security and 'Headless browser tools are opt-in 
 assert 'V1 execution and verification' in security and 'Local schedules' in security, 'Security model must document V1 verification and schedule boundaries'
 permissions_src=(root/'src-tauri/src/permissions.rs').read_text()
 assert 'confirm_shell_commands:false' in permissions_src, 'Routine user-level shell commands should be low-friction by default in V1'
-assert 'shell_command_risk' in tools and 'run_shell_with_credentials" => "sensitive"' in tools, 'Shell approvals must be risk-aware and credential commands always sensitive'
+assert 'shell_command_risk' in tools and 'run_shell_with_credentials' in tools and 'agent_schedule_create' in tools and '=> "sensitive"' in tools, 'Shell approvals must be risk-aware and credential/agent-schedule actions always sensitive'
 assert 'sudo or pkexec' in tools, 'Ordinary shell execution must not bypass the privileged PolicyKit tool'
 
 setup=(root/'scripts/setup-desktop-access.sh').read_text()
