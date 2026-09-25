@@ -114,6 +114,7 @@ private fun FatirApp() {
             val candidate = FatirApi(url, key)
             val result = candidate.health()
             if (!result.ok) error("Fatir did not report ready")
+            candidate.roots() // authenticated probe: reject a wrong token before entering the app
             api = candidate
             health = result
             if (save) store.save(candidate.baseUrl, key.trim())
