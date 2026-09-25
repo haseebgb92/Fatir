@@ -152,12 +152,19 @@ class FatirApi(
 
     companion object {
         fun normalizeBaseUrl(raw: String): String {
-            var value = raw.trim().trimEnd('/')
-            if (!value.startsWith("http://") && !value.startsWith("https://")) {
-                value = "http://$value"
-            }
-            if (value.substringAfter("://").substringBefore('/').contains(':').not()) {
-                value += ":32145"
+            val trimmed = raw.trim().trimEnd('/')
+            val hadScheme = trimmed.startsWith("http://") || trimmed.startsWith("https://")
+            var value = if (hadScheme) trimmed else "http://$trimmed"
+
+            // Bare addresses are treated as LAN Fatir and get the local Companion port.
+            // Explicit http/https URLs are respected exactly so cloud relay paths such as
+            // https://relay.example.com/d/<device-id> remain untouched.
+            if (!hadScheme) {
+                val authority = value.substringAfter("://").substringBefore('/')
+                val hasPath = value.substringAfter("://").contains('/')
+                if (!authority.contains(':') && !hasPath) {
+                    value += ":32145"
+                }
             }
             return value
         }
