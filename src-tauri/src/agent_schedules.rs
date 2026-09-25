@@ -151,6 +151,9 @@ pub fn create(label:&str,prompt:&str,kind:&str,trigger:&str,browser_mode:&str,cr
     if !matches!(kind,"delay"|"calendar"){return Err(anyhow!("trigger_kind must be delay or calendar"));}
     if trigger.trim().is_empty() || trigger.contains(['\n','\r']) { return Err(anyhow!("Schedule trigger must be one line")); }
     if !matches!(browser_mode,"none"|"managed"|"headless"|"current") { return Err(anyhow!("browser_mode must be none, managed, headless or current")); }
+    if browser_mode=="headless" && !credential_ids.is_empty() {
+        return Err(anyhow!("Stored credentials are intentionally not injected into the isolated headless browser. Use managed browser mode for authenticated scheduled workflows."));
+    }
     validate_credentials(&credential_ids)?;
 
     let id=Uuid::new_v4().to_string();
