@@ -95,3 +95,14 @@ html,body{height:100%;background:transparent}body{padding:6px;overflow:hidden}
 #opsSheet .activity-title{flex:0 0 auto}
 #opsSheet .cleanup-summary{flex:0 0 auto}
 @media(max-width:400px){#opsSheet{inset:4px}#opsSheet .command-center{padding:12px;border-radius:16px}#opsSheet .ops-summary{grid-template-columns:repeat(2,minmax(0,1fr));gap:5px}#opsSheet .ops-tabs{margin-left:-2px;margin-right:-2px}}
+
+/* Shared chat history */
+#chatsSheet .chats-card{max-height:88%;display:flex;flex-direction:column;overflow:hidden}
+#chatsSheet #chatHistoryList{overflow:auto;min-height:120px}
+.chat-history-row{width:100%;border:1px solid #e9e2d7;background:#fffefa;border-radius:13px;padding:10px 11px;display:grid;grid-template-columns:30px minmax(0,1fr) auto;gap:9px;align-items:center;text-align:left;color:#322f2a;cursor:pointer;margin-bottom:7px}
+.chat-history-row:hover{background:#fff9ef;border-color:#d9c5a4}
+.chat-history-icon{width:28px;height:28px;border-radius:9px;background:#f8efdf;color:#95691f;display:grid;place-items:center;font-size:13px}
+.chat-history-copy{min-width:0;display:flex;flex-direction:column;gap:3px}
+.chat-history-copy strong{font-size:10.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chat-history-copy small{font-size:8.5px;color:#928b80;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chat-history-source{font-size:7.5px;text-transform:uppercase;letter-spacing:.05em;color:#9b742e;background:#fbf1de;border-radius:999px;padding:4px 6px}
