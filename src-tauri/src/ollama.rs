@@ -1,4 +1,4 @@
-use crate::{adaptive, chat_history, memory, proactive, routines, tasks, projects, terminal_sessions, orchestrator, recovery, permissions, models::{AgentResponse, Attachment, PendingAction, StoredPending, TraceItem}, tools};
+use crate::{adaptive, chat_history, memory, proactive, routines, tasks, projects, terminal_sessions, orchestrator, recovery, permissions, models::{AgentResponse, Attachment, PendingAction, ResourceRef, StoredPending, TraceItem}, tools};
 use anyhow::{anyhow, Context, Result};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use keyring::Entry;
@@ -363,6 +363,16 @@ async fn browser_context_for_session(state:&SharedState, session_id:&str)->Brows
     sessions.get(session_id).map(|m|browser_turn_context(m)).unwrap_or_default()
 }
 
+fn chat_resources(response: &AgentResponse) -> Vec<ResourceRef> {
+    let mut seen = HashSet::new();
+    response.trace.iter()
+        .flat_map(|item| item.resources.iter())
+        .filter(|resource| resource.kind != "folder" && seen.insert(resource.path.clone()))
+        .take(50)
+        .cloned()
+        .collect()
+}
+
 pub async fn send_message(state: SharedState, session_id: &str, text: &str, attachments: Vec<Attachment>, mode: &str) -> Result<AgentResponse> {
     let started = Instant::now();
     let _ = adaptive::note_user_correction(text);
@@ -399,7 +409,18 @@ pub async fn send_message(state: SharedState, session_id: &str, text: &str, atta
         json!({"role":"user","content":format!("{}{}", text, attachment_note),"images":images})
     };
 
-    let _ = chat_history::append(session_id, "user", text, None);
+    let user_resources = attachments.iter().map(|attachment| {
+        let path = PathBuf::from(&attachment.path);
+        ResourceRef {
+            label: path.file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or(&attachment.path)
+                .to_string(),
+            path: attachment.path.clone(),
+            kind: "file".into(),
+        }
+    }).collect::<Vec<_>>();
+    let _ = chat_history::append_with_resources(session_id, "user", text, None, &user_resources);
 
     {
         let mut sessions = state.sessions.lock().await;
@@ -428,7 +449,8 @@ pub async fn send_message(state: SharedState, session_id: &str, text: &str, atta
         match tools::with_browser_execution_context(browser_ctx.allowed, browser_ctx.active, try_local_fast_path(&state, session_id, text, &token)).await {
             Ok(Some(response)) => {
                 let _ = adaptive::record_interaction(text, &response, started.elapsed().as_millis() as u64);
-                let _ = chat_history::append(session_id, "assistant", &response.text, Some(&response.model));
+                let resources = chat_resources(&response);
+                let _ = chat_history::append_with_resources(session_id, "assistant", &response.text, Some(&response.model), &resources);
                 tools::hide_all_virtual_pointers().await;
                 end_run(&state, session_id).await;
                 return Ok(response);
@@ -444,7 +466,8 @@ pub async fn send_message(state: SharedState, session_id: &str, text: &str, atta
     ).await;
     if let Ok(response) = &result {
         let _ = adaptive::record_interaction(text, response, started.elapsed().as_millis() as u64);
-        let _ = chat_history::append(session_id, "assistant", &response.text, Some(&response.model));
+        let resources = chat_resources(response);
+        let _ = chat_history::append_with_resources(session_id, "assistant", &response.text, Some(&response.model), &resources);
     }
     tools::hide_all_virtual_pointers().await;
     end_run(&state, session_id).await;
@@ -946,7 +969,8 @@ pub async fn approve_action(state: SharedState, action_id: &str, mode: &str) -> 
     let mut prefix=vec![action_trace];
     if let Some((_,_,verify_trace))=verification_result { prefix.push(verify_trace); }
     for item in prefix.into_iter().rev(){response.trace.insert(0,item);}
-    let _ = chat_history::append(&pending.session_id, "assistant", &response.text, Some(&response.model));
+    let resources = chat_resources(&response);
+    let _ = chat_history::append_with_resources(&pending.session_id, "assistant", &response.text, Some(&response.model), &resources);
     Ok(response)
 }
 
@@ -973,7 +997,8 @@ pub async fn deny_action(state: SharedState, action_id: &str, mode: &str) -> Res
     tools::hide_all_virtual_pointers().await;
     end_run(&state, &pending.session_id).await;
     if let Ok(response)=&result {
-        let _=chat_history::append(&pending.session_id,"assistant",&response.text,Some(&response.model));
+        let resources = chat_resources(response);
+        let _=chat_history::append_with_resources(&pending.session_id,"assistant",&response.text,Some(&response.model),&resources);
     }
     result
 }
