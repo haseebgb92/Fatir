@@ -364,9 +364,9 @@ pub fn risk_for(tool: &str, args:&Value) -> &'static str {
     match tool {
         "install_apt" | "install_deb" | "run_privileged_command" | "desktop_repair_accessibility" => "system",
         "browser_fill_credential" | "browser_fill_credential_by_label" | "desktop_fill_credential" => "sensitive",
-        "run_shell_with_credentials" => "sensitive",
+        "run_shell_with_credentials" | "agent_schedule_create" => "sensitive",
         "run_shell_command" | "terminal_session_exec" | "background_job_start" | "scheduled_job_create" => shell_command_risk(args.get("command").and_then(Value::as_str).unwrap_or("")),
-        "install_flatpak" | "download_file" | "extract_archive" | "create_desktop_entry" | "background_job_cancel" | "scheduled_job_cancel" | "agent_schedule_create" | "agent_schedule_cancel" | "write_text_file" | "copy_file" | "move_path" | "create_directory" | "routine_capture_recent" | "routine_remove" | "project_forget" | "terminal_session_close" => "change",
+        "install_flatpak" | "download_file" | "extract_archive" | "create_desktop_entry" | "background_job_cancel" | "scheduled_job_cancel" | "agent_schedule_cancel" | "write_text_file" | "copy_file" | "move_path" | "create_directory" | "routine_capture_recent" | "routine_remove" | "project_forget" | "terminal_session_close" => "change",
         "move_to_trash" | "cleanup_move_to_trash" | "empty_trash" => "destructive",
         "rollback_execute" => "change",
         "desktop_activate_named" | "desktop_visual_action" | "desktop_key" => desktop_action_risk(args),
