@@ -343,8 +343,8 @@ private fun ConnectionScreen(
                     OutlinedTextField(
                         value = address,
                         onValueChange = onAddress,
-                        label = { Text("Linux IP") },
-                        placeholder = { Text("192.168.1.20:32145") },
+                        label = { Text("Fatir address") },
+                        placeholder = { Text("192.168.0.104:32145 or https://relay…/d/…") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -374,7 +374,7 @@ private fun ConnectionScreen(
                     }
                 }
             }
-            Text("Local MVP · trusted Wi-Fi only", color = FatirMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 18.dp))
+            Text("Local or cloud relay connection", color = FatirMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 18.dp))
         }
     }
 }
