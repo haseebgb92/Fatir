@@ -140,6 +140,7 @@ data class ChatTurn(
     val role: String,
     val text: String,
     val model: String? = null,
+    val resources: List<ResourceRef> = emptyList(),
     val created_at: String
 )
 
