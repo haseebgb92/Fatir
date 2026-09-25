@@ -30,6 +30,8 @@ const panelWidthValue = $('#panelWidthValue');
 let attachments = [];
 let busy = false;
 let stopping = false;
+let busyStartedAt = 0;
+let busyTimer = null;
 let sessionId = localStorage.getItem('fatir-session') || localStorage.getItem('ah-session') || crypto.randomUUID();
 localStorage.setItem('fatir-session', sessionId);
 let selectedModel = localStorage.getItem('fatir-model') || localStorage.getItem('ah-model') || 'auto';
@@ -163,14 +165,30 @@ function currentModel(){ return selectedModel || 'auto'; }
 function setBusy(value){
   busy = value;
   if(value){
+    busyStartedAt=Date.now();
+    if(busyTimer) clearInterval(busyTimer);
+    const refreshBusyLabel=()=>{
+      if(!busy || stopping) return;
+      const seconds=Math.max(0,Math.floor((Date.now()-busyStartedAt)/1000));
+      if(seconds<8) thinkingText.textContent='Fatir is working';
+      else if(seconds<60) thinkingText.textContent=`Working · ${seconds}s`;
+      else {
+        const minutes=Math.floor(seconds/60);
+        const remain=seconds%60;
+        thinkingText.textContent=`Working · ${minutes}m ${remain}s · Stop is safe`;
+      }
+    };
+    busyTimer=setInterval(refreshBusyLabel,1000);
+    refreshBusyLabel();
     sendBtn.textContent='■';
     sendBtn.classList.add('stop-mode');
     sendBtn.disabled=false;
     sendBtn.setAttribute('aria-label','Stop');
     thinking.classList.remove('hidden');
-    thinkingText.textContent = stopping ? 'Stopping…' : 'Fatir is working';
   } else {
     stopping=false;
+    busyStartedAt=0;
+    if(busyTimer){ clearInterval(busyTimer); busyTimer=null; }
     sendBtn.textContent='↑';
     sendBtn.classList.remove('stop-mode');
     sendBtn.disabled=false;
@@ -259,6 +277,10 @@ function addNotice(text){
 function addError(err){
   const text=String(err);
   if(text.includes('FATIR_STOPPED')){ addNotice('Stopped.'); return; }
+  if(text.includes('FATIR_TIMEOUT')){
+    addNotice('This foreground task stopped after 15 minutes instead of remaining stuck. You can retry it or move long work to a background task.');
+    return;
+  }
   const el=document.createElement('div');el.className='message assistant';
   el.innerHTML=`<div class="assistant-label">Fatir</div><div class="bubble">I hit a problem: <strong>${escapeHtml(text)}</strong></div>`;messages.appendChild(el);scrollBottom();
 }
