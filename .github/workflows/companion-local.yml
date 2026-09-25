@@ -2,7 +2,7 @@ name: Companion Local MVP
 
 on:
   push:
-    branches: [companion-local-mvp]
+    branches: [companion-local-mvp, scheduled-agent-sync]
     paths:
       - "src-tauri/**"
       - "companion-android/**"
