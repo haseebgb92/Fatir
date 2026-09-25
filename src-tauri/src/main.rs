@@ -25,6 +25,7 @@ mod terminal_sessions;
 mod app_playbooks;
 mod permissions;
 mod schedules;
+mod companion;
 
 use models::{AgentResponse, Attachment, SystemSnapshot};
 use ollama::SharedState;
@@ -98,6 +99,11 @@ struct AppStatus {
     connection: String,
     has_cloud_key: bool,
     version: String,
+}
+
+#[tauri::command]
+fn companion_status(state: tauri::State<'_, companion::CompanionService>) -> companion::CompanionInfo {
+    state.info()
 }
 
 #[tauri::command]
@@ -529,6 +535,7 @@ fn show_panel(app: &tauri::AppHandle) {
 
 fn main() {
     let state = ollama::new_state();
+    let companion_service = companion::CompanionService::new(state.clone());
     let startup_args: Vec<String> = std::env::args().collect();
     let background = startup_args.iter().any(|a| a == "--background");
     let startup_share = extract_share_args(&startup_args);
@@ -539,10 +546,12 @@ fn main() {
             show_panel(app);
         }))
         .manage(state)
+        .manage(companion_service.clone())
         .manage(PanelUiState::default())
         .manage(ShareUiState { pending_paths: Mutex::new(startup_share.clone()) })
         .invoke_handler(tauri::generate_handler![
             app_status,
+            companion_status,
             list_models,
             save_api_key,
             clear_api_key,
@@ -612,6 +621,12 @@ fn main() {
             adaptive::ensure_layout().ok();
             tauri::async_runtime::spawn(observer::run_forever());
             tauri::async_runtime::spawn(proactive::monitor_forever());
+            let companion = app.state::<companion::CompanionService>().inner().clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(err) = companion.serve().await {
+                    eprintln!("Fatir Companion LAN service failed: {err}");
+                }
+            });
             if !background || !startup_share.is_empty() { show_panel(app.handle()); }
             Ok(())
         })
