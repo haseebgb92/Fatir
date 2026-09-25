@@ -104,3 +104,64 @@ data class TransferItem(
     val detail: String,
     val success: Boolean
 )
+
+
+@Serializable
+data class ChatSummary(
+    val session_id: String,
+    val title: String,
+    val preview: String = "",
+    val message_count: Int = 0,
+    val created_at: String? = null,
+    val updated_at: String? = null,
+    val source: String = "desktop"
+)
+
+@Serializable
+data class ChatListResponse(
+    val chats: List<ChatSummary> = emptyList()
+)
+
+@Serializable
+data class ChatHistoryMessage(
+    val role: String,
+    val content: String
+)
+
+@Serializable
+data class ChatHistoryResponse(
+    val session_id: String,
+    val messages: List<ChatHistoryMessage> = emptyList()
+)
+
+@Serializable
+data class AgentScheduleItem(
+    val id: String,
+    val label: String,
+    val prompt: String = "",
+    val trigger_kind: String = "",
+    val trigger: String = "",
+    val calendar: String = "",
+    val execution_mode: String = "agent",
+    val credential_ids: List<String> = emptyList(),
+    val verification_required: Boolean = true,
+    val session_id: String = "",
+    val created_at: String = "",
+    val last_run_at: String? = null,
+    val last_status: String? = null,
+    val last_result: String? = null,
+    val last_model: String? = null,
+    val last_pending_action: String? = null,
+    val timer_state: String = "",
+    val next: String = ""
+)
+
+@Serializable
+data class AgentScheduleListResponse(
+    val schedules: List<AgentScheduleItem> = emptyList()
+)
+
+@Serializable
+data class IdRequest(
+    val id: String
+)
