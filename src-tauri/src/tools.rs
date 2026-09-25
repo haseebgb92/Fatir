@@ -60,7 +60,7 @@ pub fn tool_definitions() -> Vec<Value> {
         tool("browser_console_messages", "Inspect browser console output for the selected tab. By default return errors/warnings for diagnosing broken pages and failed scripts.", json!({"type":"object","properties":{"limit":{"type":"integer","minimum":1,"maximum":200},"all_types":{"type":"boolean"},"preserve":{"type":"boolean"}},"additionalProperties":false})),
         tool("browser_diagnostics", "Run a compact browser diagnostic snapshot combining recent failed network activity and console errors/warnings for the selected tab. Read-only.", json!({"type":"object","properties":{"limit":{"type":"integer","minimum":5,"maximum":100}},"additionalProperties":false})),
         tool("browser_memory_current", "Read Fatir's learned semantic browser targets for the current site. Browser memory stores labels/roles and success history, never passwords or secret field values.", json!({"type":"object","properties":{"limit":{"type":"integer","minimum":1,"maximum":100}},"additionalProperties":false})),
-        tool("browser_takeover", "Pause Fatir computer control and hand the current browser step to the user, preserving the URL and reason. Use for CAPTCHA, unusual login verification, ambiguous sensitive confirmation, or when the user asks to take over.", json!({"type":"object","properties":{"reason":{"type":"string"}},"required":["reason"],"additionalProperties":false})),
+        tool("browser_takeover", "Pause Fatir computer control and hand the current browser step to the user, preserving the URL and reason. Use for authenticator/TOTP or verification codes, security keys, CAPTCHA, phone approvals, unusual login verification, ambiguous sensitive confirmation, or when the user asks to take over.", json!({"type":"object","properties":{"reason":{"type":"string"}},"required":["reason"],"additionalProperties":false})),
         tool("browser_takeover_resume", "Resume Fatir computer control after the user has completed a takeover step. Re-observe/re-snapshot before acting because the page may have changed.", json!({"type":"object","properties":{},"additionalProperties":false})),
         tool("browser_takeover_status", "Read whether Fatir computer control is paused for human takeover and the preserved browser checkpoint. Read-only.", json!({"type":"object","properties":{},"additionalProperties":false})),
         tool("headless_browser_tabs", "HEADLESS ONLY: list tabs in Fatir's isolated headless browser session. This tool is exposed only when the user explicitly requests headless execution.", json!({"type":"object","properties":{},"additionalProperties":false})),
@@ -1427,7 +1427,7 @@ fn redact_sensitive_browser_text(raw:&str)->String{
 
 fn snapshot_takeover_recommended(snapshot:&str)->bool{
     let h=snapshot.to_lowercase();
-    ["captcha","verify you are human","are you human","security check","challenge required","two-factor authentication","2-step verification","enter verification code","confirm it's you","confirm it’s you"].iter().any(|x|h.contains(x))
+    ["captcha","verify you are human","are you human","security check","challenge required","two-factor authentication","2-step verification","enter verification code","verification code","authenticator","one-time code","one time code","one-time password","one time password","security key","check your phone","approve sign-in","approve sign in","confirm it's you","confirm it’s you"].iter().any(|x|h.contains(x))
 }
 
 fn filter_network_failures(raw:&str)->String{
