@@ -49,6 +49,7 @@
         <button id="shareBtn" class="icon-btn share-header-btn" title="Share with Fatir" aria-label="Share with Fatir">↗</button>
         <button id="opsBtn" class="icon-btn" title="Tasks, jobs and routines" aria-label="Tasks, jobs and routines">▤</button>
         <button id="activityBtn" class="icon-btn" title="Activity and memory" aria-label="Activity and memory">◫</button>
+        <button id="chatsBtn" class="icon-btn" title="Chat history" aria-label="Chat history">☰</button>
         <button id="newChatBtn" class="icon-btn" title="New chat" aria-label="New chat">＋</button>
       </div>
     </div>
@@ -138,6 +139,14 @@
       <section id="opsCleanup" class="ops-panel hidden"><div id="cleanupSummary" class="cleanup-summary"><div class="activity-empty">Scanning Downloads…</div></div><div class="activity-title cleanup-actions"><strong>Cleanup candidates</strong><div><button id="scanDuplicates" type="button">Find duplicates</button><button id="reviewCleanup" type="button">Review with Fatir</button></div></div><div id="cleanupList" class="ops-list"><div class="activity-empty">Loading…</div></div></section>
       <section id="opsAlerts" class="ops-panel hidden"><div id="alertList" class="ops-list"><div class="activity-empty">Loading…</div></div></section>
       <section id="opsUndo" class="ops-panel hidden"><div class="activity-title"><strong>Rollback points</strong><small><span id="undoCount">—</span> available</small></div><div id="undoList" class="ops-list"><div class="activity-empty">Loading…</div></div></section>
+    </div>
+  </div>
+
+  <div id="chatsSheet" class="sheet hidden" aria-hidden="true">
+    <div class="sheet-card chats-card">
+      <div class="sheet-head"><div><span class="eyebrow">Shared history</span><h2>Chats</h2><p>Desktop, Companion and scheduled-agent conversations live in one local record.</p></div><button id="closeChats" class="icon-btn">×</button></div>
+      <div class="activity-title"><strong>Recent conversations</strong><button id="refreshChats" type="button">Refresh</button></div>
+      <div id="chatHistoryList" class="activity-list"><div class="activity-empty">Loading chats…</div></div>
     </div>
   </div>
 
