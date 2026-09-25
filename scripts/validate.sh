@@ -281,5 +281,30 @@ assert '#opsSheet{align-items:stretch' in styles, 'Command Center must align fro
 assert '#opsSheet .command-center{height:100%;max-height:none' in styles, 'Command Center card must fill the sheet height'
 assert '#opsSheet .ops-panel{flex:1 1 auto;min-height:0;overflow-y:auto' in styles, 'Command Center content must scroll inside the panel'
 assert '.shell{height:calc(100vh - 16px);min-height:0' in styles or '.shell{height:calc(100vh - 12px)' in styles, 'Sidebar shell must use viewport-relative height'
+# Scheduled-agent regression guards
+agent_schedules=(root/'src-tauri/src/agent_schedules.rs').read_text()
+chats=(root/'src-tauri/src/chats.rs').read_text()
+companion=(root/'src-tauri/src/companion.rs').read_text()
+main_rs=(root/'src-tauri/src/main.rs').read_text()
+android_models=(root/'companion-android/app/src/main/java/com/fatir/companion/Models.kt').read_text()
+android_api=(root/'companion-android/app/src/main/java/com/fatir/companion/FatirApi.kt').read_text()
+android_ui=(root/'companion-android/app/src/main/java/com/fatir/companion/MainActivity.kt').read_text()
+for required in ('agent_schedule_create','agent_schedule_list','agent_schedule_run_now','agent_schedule_cancel','browser_fill_credential_by_label'):
+    assert f'"{required}"' in tools, f'Missing scheduled-agent/credential tool {required}'
+assert 'Persistent=true' in agent_schedules and '--run-agent-schedule' in agent_schedules, 'Agent schedules must be persistent systemd timers that wake Fatir'
+assert 'SCHEDULE_AUTH' in agent_schedules and 'tool_preapproved' in agent_schedules, 'Scheduled credential authorization must remain task-local and scoped'
+assert 'credential_ids' in agent_schedules and 'credentials::secret' not in agent_schedules, 'Schedule registry must store credential IDs only, never secret values'
+assert 'browser_takeover' in agent_schedules and 'authenticator/TOTP' in agent_schedules, 'Scheduled authentication must stop for human MFA/security challenges'
+assert 'chats::touch(session_id, text)' in ollama, 'Interactive and scheduled conversations must update the shared chat index'
+assert 'chat_list' in main_rs and 'chat_history' in main_rs and 'chat_remove' in main_rs, 'Desktop chat history commands missing'
+assert '/api/v1/chats' in companion and '/api/v1/agent-schedules' in companion, 'Companion chat/schedule sync API missing'
+assert 'ChatSummary' in android_models and 'AgentScheduleItem' in android_models, 'Companion sync models missing'
+assert 'suspend fun chats()' in android_api and 'suspend fun agentSchedules()' in android_api, 'Companion sync client missing'
+assert 'Screen.CHATS' in android_ui and 'Screen.SCHEDULES' in android_ui, 'Companion chat/schedule screens missing'
+assert "invoke('chat_history'" in ui and "invoke('chat_list')" in ui, 'Desktop must restore and browse persisted chats'
+assert 'agent schedule(s)' in ui, 'Desktop runtime must surface agent schedule count'
+assert 'AndroidKeyStore' in (root/'companion-android/app/src/main/java/com/fatir/companion/ConnectionStore.kt').read_text(), 'Companion token must be protected by Android Keystore'
+assert 'Agent schedules' in security and 'Authenticator/TOTP' in security, 'Security model must document autonomous schedule and MFA boundaries'
+
 print('Static validation passed')
 PY
