@@ -408,7 +408,12 @@ pub fn summary_for(tool: &str, args: &Value) -> String {
         "routine_capture_recent" => format!("Save recent actions as routine {}", args.get("name").and_then(Value::as_str).unwrap_or("routine")),
         "routine_remove" => format!("Remove saved routine {}", args.get("id").and_then(Value::as_str).unwrap_or("")),
         "background_job_start" => format!("Start background job: {}", args.get("label").and_then(Value::as_str).unwrap_or("job")),
-        "agent_schedule_create" => format!("Create scheduled agent task: {}", args.get("label").and_then(Value::as_str).unwrap_or("agent task")),
+        "agent_schedule_create" => {
+            let label=args.get("label").and_then(Value::as_str).unwrap_or("agent task");
+            let browser=args.get("browser_mode").and_then(Value::as_str).unwrap_or("none");
+            let credentials=args.get("credential_ids").and_then(Value::as_array).map(|v|v.len()).unwrap_or(0);
+            format!("Create scheduled agent task: {label} · browser: {browser} · {credentials} stored credential(s) authorized")
+        },
         "agent_schedule_cancel" => format!("Cancel scheduled agent task {}", args.get("id").and_then(Value::as_str).unwrap_or("")),
         "background_job_cancel" => format!("Stop background job {}", args.get("id").and_then(Value::as_str).unwrap_or("")),
         "terminal_session_exec" => format!("Run in terminal session: {}", shorten(args.get("command").and_then(Value::as_str).unwrap_or(""),140)),
