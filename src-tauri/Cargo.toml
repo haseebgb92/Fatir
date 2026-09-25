@@ -1,6 +1,6 @@
 [package]
 name = "fatir"
-version = "1.1.1"
+version = "1.2.0"
 description = "Fatir - a resident personal assistant for Linux Mint"
 authors = ["Muhammad Haseeb"]
 edition = "2021"
