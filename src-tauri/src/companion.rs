@@ -178,6 +178,8 @@ impl CompanionService {
             .route("/api/v1/chats/history", get(chat_history))
             .route("/api/v1/agent-schedules", get(agent_schedule_list))
             .route("/api/v1/agent-schedules/run", post(agent_schedule_run))
+            .route("/api/v1/agent-schedules/approve", post(agent_schedule_approve))
+            .route("/api/v1/agent-schedules/deny", post(agent_schedule_deny))
             .route("/api/v1/agent-schedules/cancel", post(agent_schedule_cancel))
             .route("/api/v1/files/roots", get(file_roots))
             .route("/api/v1/files/list", get(list_files))
@@ -337,6 +339,30 @@ async fn agent_schedule_run(
 ) -> Response {
     if let Err(response) = require_auth(&headers, &state) { return response; }
     match agent_schedules::run_now(&request.id) {
+        Ok(row) => Json(row).into_response(),
+        Err(e) => error(StatusCode::BAD_REQUEST, &e.to_string()),
+    }
+}
+
+async fn agent_schedule_approve(
+    State(state): State<CompanionService>,
+    headers: HeaderMap,
+    Json(request): Json<IdRequest>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) { return response; }
+    match agent_schedules::approve_pending(state.shared.clone(), &request.id).await {
+        Ok(row) => Json(row).into_response(),
+        Err(e) => error(StatusCode::BAD_REQUEST, &e.to_string()),
+    }
+}
+
+async fn agent_schedule_deny(
+    State(state): State<CompanionService>,
+    headers: HeaderMap,
+    Json(request): Json<IdRequest>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) { return response; }
+    match agent_schedules::deny_pending(state.shared.clone(), &request.id).await {
         Ok(row) => Json(row).into_response(),
         Err(e) => error(StatusCode::BAD_REQUEST, &e.to_string()),
     }
