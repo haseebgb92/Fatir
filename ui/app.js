@@ -394,11 +394,12 @@ function topNames(items=[]){
 async function refreshActivity(){
   $('#activityList').innerHTML='<div class="activity-empty">Loading…</div>';
   try{
-    const [actions,routine,obs,status]=await Promise.all([
+    const [actions,routine,obs,status,chats]=await Promise.all([
       invoke('recent_actions',{limit:24}),
       invoke('routine_summary',{limit:900}),
       invoke('observer_status'),
-      invoke('app_status')
+      invoke('app_status'),
+      invoke('chat_sessions',{limit:40}).catch(()=>[])
     ]);
     const stats=obs.stats||{};
     $('#activityLearning').textContent=(obs.config?.enabled?'On':'Off');
@@ -412,6 +413,27 @@ async function refreshActivity(){
         const detail=String(a.result||'').replace(/\s+/g,' ').slice(0,110);
         return `<div class="activity-item ${ok?'':'error'}"><div class="activity-badge">${ok?'✓':'!'}</div><div class="activity-copy"><strong>${escapeHtml((a.tool||'action').replaceAll('_',' '))}</strong><small>${escapeHtml(detail||'Completed')}</small></div><div class="activity-time">${escapeHtml(formatWhen(a.at))}</div></div>`;
       }).join('');
+    }
+    const chatHolder=$('#chatHistoryList');
+    if(chatHolder){
+      chatHolder.innerHTML=(chats||[]).length ? chats.map(ch=>`
+        <button class="activity-item chat-history-row" type="button" data-session="${escapeHtml(ch.session_id)}">
+          <div class="activity-badge">◫</div>
+          <div class="activity-copy"><strong>${escapeHtml(ch.title||'Fatir chat')}</strong><small>${escapeHtml(ch.preview||'')} · ${escapeHtml(formatWhen(ch.updated_at))}</small></div>
+          <div class="activity-time">${escapeHtml(String(ch.messages||0))}</div>
+        </button>`).join('') : '<div class="activity-empty">No saved chats yet.</div>';
+      chatHolder.querySelectorAll('[data-session]').forEach(btn=>btn.addEventListener('click',async()=>{
+        try{
+          const loaded=await invoke('chat_messages',{sessionId:btn.dataset.session,limit:500});
+          sessionId=btn.dataset.session; localStorage.setItem('fatir-session',sessionId);
+          messages.innerHTML=''; welcome.classList.add('hidden');
+          (loaded||[]).forEach(turn=>{
+            if(turn.role==='user') addUser(turn.text||'');
+            else if(turn.role==='assistant') addAssistant({text:turn.text||'',model:turn.model||'history',trace:[],pending:null});
+          });
+          closeActivity(); composer.focus();
+        }catch(e){addError(e)}
+      }));
     }
     $('#routineGrid').innerHTML=`
       <div class="routine-card"><span>Apps</span><p>${topNames(routine.top_apps)}</p></div>
@@ -434,7 +456,7 @@ async function refreshRunBadge(){
 }
 async function refreshOps(){
   try{
-    const [tasks,jobs,undos,routines,cleanup,trash,alerts,projects,terminals,v1]=await Promise.all([
+    const [tasks,jobs,undos,routines,cleanup,trash,alerts,projects,terminals,v1,agentSchedules]=await Promise.all([
       invoke('task_list',{includeCompleted:false}),
       invoke('job_list'),
       invoke('rollback_list',{limit:60}),
@@ -444,7 +466,8 @@ async function refreshOps(){
       invoke('proactive_events',{limit:40}),
       invoke('project_list'),
       invoke('terminal_session_list'),
-      invoke('v1_status')
+      invoke('v1_status'),
+      invoke('agent_schedule_list').catch(()=>[])
     ]);
     const running=(jobs||[]).filter(j=>j.status==='running').length;
     const available=(undos||[]).filter(u=>u.status==='available').length;
@@ -453,6 +476,7 @@ async function refreshOps(){
     $('#routineCount').textContent=String((routines||[]).length);
     $('#projectCount').textContent=String((projects||[]).length);
     $('#alertCount').textContent=String((alerts||[]).length);
+    $('#scheduleCount').textContent=String((agentSchedules||[]).length);
     $('#undoCount').textContent=String(available);
     const badge=$('#runBadge'); badge.textContent=`${running} running`; badge.classList.toggle('hidden',running===0);
 
@@ -484,6 +508,25 @@ async function refreshOps(){
       try{await invoke('job_cancel',{jobId:item.dataset.job});await refreshOps();}catch(e){addError(e)}
     }));
 
+    const scheduleHolder=$('#agentScheduleList');
+    if(scheduleHolder){
+      scheduleHolder.innerHTML=(agentSchedules||[]).length ? agentSchedules.map(s=>`
+        <div class="ops-item stack" data-agent-schedule="${escapeHtml(s.id)}">
+          <span class="ops-badge ${s.last_status==='completed'?'active':s.last_status==='awaiting_user'?'waiting':''}">${escapeHtml(s.last_status||s.timer_state||'scheduled')}</span>
+          <div class="ops-copy"><strong>${escapeHtml(s.label||'Scheduled agent task')}</strong><small>${escapeHtml((s.trigger||'')+' · '+(s.browser_mode||'none')+' browser')}</small><small>${escapeHtml((s.last_result||s.prompt||'').replace(/\s+/g,' ').slice(0,160))}</small></div>
+          <div class="ops-actions"><button class="agent-run-now" type="button">Run now</button><button class="agent-cancel danger" type="button">Cancel</button></div>
+        </div>`).join('') : '<div class="activity-empty">No scheduled agent tasks. Ask Fatir to schedule a recurring web or computer task.</div>';
+      scheduleHolder.querySelectorAll('.agent-run-now').forEach(btn=>btn.addEventListener('click',async()=>{
+        const row=btn.closest('[data-agent-schedule]');
+        try{addNotice('Scheduled agent task started.');await invoke('agent_schedule_run_now',{id:row.dataset.agentSchedule});await refreshOps();await refreshActivity();}catch(e){addError(e)}
+      }));
+      scheduleHolder.querySelectorAll('.agent-cancel').forEach(btn=>btn.addEventListener('click',async()=>{
+        const row=btn.closest('[data-agent-schedule]');
+        if(!confirm('Cancel this scheduled agent task?'))return;
+        try{await invoke('agent_schedule_cancel',{id:row.dataset.agentSchedule});await refreshOps();}catch(e){addError(e)}
+      }));
+    }
+
     $('#routineListSaved').innerHTML=(routines||[]).length ? routines.map(r=>`
       <div class="ops-item stack" data-routine="${escapeHtml(r.id)}">
         <span class="ops-badge active">${escapeHtml(String(r.steps?.length||0))} steps</span>
@@ -513,7 +556,7 @@ async function refreshOps(){
       <div class="ops-item stack"><span class="ops-badge active">V${escapeHtml(v1?.version||'1.0')}</span><div class="ops-copy"><strong>${escapeHtml(engine.engine||'Fatir V1 task engine')}</strong><small>Verification gate ${engine.verification_gate?'ON':'OFF'} · Recovery ${engine.recovery_classification?'ON':'OFF'} · Headless ${escapeHtml(engine.headless_policy||'explicit-only')}</small></div></div>
       <div class="ops-item stack"><span class="ops-badge ${teach.active?'waiting':'active'}">Teach 3.0</span><div class="ops-copy"><strong>${teach.active?escapeHtml(teach.name||'Recording'):'Not recording'}</strong><small>${escapeHtml(String(teach.steps||0))} recorded step(s)</small></div></div>
       <div class="ops-item stack"><span class="ops-badge active">Terminal</span><div class="ops-copy"><strong>${escapeHtml(String((terminals||[]).length))} persistent session(s)</strong><small>${(terminals||[]).slice(0,4).map(x=>`${escapeHtml(x.label)} · ${escapeHtml(x.cwd)}`).join('<br>')||'No persistent terminal sessions yet.'}</small></div></div>
-      <div class="ops-item stack"><span class="ops-badge active">Schedules</span><div class="ops-copy"><strong>${escapeHtml(String(v1?.schedules||0))} persistent local schedule(s)</strong><small>systemd user timers · local commands only · headless remains explicit-only</small></div></div>
+      <div class="ops-item stack"><span class="ops-badge active">Schedules</span><div class="ops-copy"><strong>${escapeHtml(String(v1?.schedules||0))} local + ${escapeHtml(String((agentSchedules||[]).length))} agent schedule(s)</strong><small>systemd-backed · browser mode authorized per agent schedule · OTP/CAPTCHA pauses for user</small></div></div>
       <div class="ops-item stack"><span class="ops-badge ${((v1?.failures?.recent_errors||[]).length)?'blocked':'active'}">Recovery</span><div class="ops-copy"><strong>${escapeHtml(String((v1?.failures?.recent_errors||[]).length))} recent error sample(s)</strong><small>${(v1?.failures?.top_failed_tools||[]).slice(0,5).map(x=>`${escapeHtml(x[0])}: ${escapeHtml(String(x[1]))}`).join(' · ')||'No recent tool failures in the sampled history.'}</small></div></div>`;
 
     const candidates=cleanup?.candidates||[];
@@ -889,7 +932,7 @@ $('#closeOps')?.addEventListener('click',closeOps);
 opsSheet?.addEventListener('click',e=>{if(e.target===opsSheet)closeOps();});
 document.querySelectorAll('.ops-tab').forEach(btn=>btn.addEventListener('click',()=>{
   document.querySelectorAll('.ops-tab').forEach(x=>x.classList.toggle('active',x===btn));
-  const tab=btn.dataset.tab; const panels={tasks:'#opsTasks',jobs:'#opsJobs',routines:'#opsRoutines',projects:'#opsProjects',runtime:'#opsRuntime',cleanup:'#opsCleanup',alerts:'#opsAlerts',undo:'#opsUndo'}; Object.entries(panels).forEach(([name,sel])=>$(sel)?.classList.toggle('hidden',tab!==name));
+  const tab=btn.dataset.tab; const panels={tasks:'#opsTasks',jobs:'#opsJobs',schedules:'#opsSchedules',routines:'#opsRoutines',projects:'#opsProjects',runtime:'#opsRuntime',cleanup:'#opsCleanup',alerts:'#opsAlerts',undo:'#opsUndo'}; Object.entries(panels).forEach(([name,sel])=>$(sel)?.classList.toggle('hidden',tab!==name));
 }));
 $('#healthNoticeAction')?.addEventListener('click',async()=>{const notice=$('#healthNotice');const prompt=notice?.dataset.prompt||'Run a full health check on this PC. Explain what needs attention and do not change anything yet.';const id=notice?.dataset.eventId;if(id){try{await invoke('proactive_ack',{id});}catch{}}send(prompt);});
 $('#saveCredential')?.addEventListener('click',async()=>{
