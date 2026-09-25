@@ -1,10 +1,15 @@
 package com.fatir.companion
 
+import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
+import java.util.UUID
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -28,9 +33,16 @@ class FatirApi(
         explicitNulls = false
     }
 
-    private val client = OkHttpClient.Builder()
-        // Browser/desktop tasks can legitimately take well over OkHttp's
-        // 10-second default read timeout while Fatir is acting and verifying.
+    private val controlClient = OkHttpClient.Builder()
+        // Long Fatir work is represented by a request id and polled, so a dead
+        // socket cannot leave the Companion chat waiting for many minutes.
+        .connectTimeout(12, TimeUnit.SECONDS)
+        .readTimeout(35, TimeUnit.SECONDS)
+        .writeTimeout(35, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
+        .build()
+
+    private val transferClient = OkHttpClient.Builder()
         .connectTimeout(12, TimeUnit.SECONDS)
         .readTimeout(10, TimeUnit.MINUTES)
         .writeTimeout(10, TimeUnit.MINUTES)
@@ -52,6 +64,82 @@ class FatirApi(
         executeJson(request)
     }
 
+    suspend fun chatResumable(
+        requestBody: ChatRequest,
+        onStatus: (ChatRunStatus) -> Unit = {}
+    ): ChatEnvelope {
+        val requestId = requestBody.request_id ?: UUID.randomUUID().toString()
+        val prepared = requestBody.copy(request_id = requestId)
+
+        var run: ChatRunStatus? = null
+        var submitAttempt = 0
+        while (run == null) {
+            try {
+                run = submitChat(prepared)
+            } catch (e: IOException) {
+                submitAttempt++
+                if (submitAttempt >= 5) throw e
+                onStatus(
+                    ChatRunStatus(
+                        request_id = requestId,
+                        session_id = prepared.session_id.orEmpty(),
+                        status = "reconnecting",
+                        message = "Connection interrupted — reconnecting…"
+                    )
+                )
+                delay(backoffMillis(submitAttempt))
+            }
+        }
+
+        onStatus(run)
+        var pollFailures = 0
+        while (true) {
+            when (run.status) {
+                "completed" -> {
+                    val response = run.response ?: throw IOException("Fatir completed without a response")
+                    return ChatEnvelope(run.session_id, response)
+                }
+                "error" -> throw IOException(run.error ?: run.message.ifBlank { "Fatir hit a problem" })
+                "timeout" -> throw IOException(run.error ?: "FATIR_TIMEOUT")
+                "cancelled" -> throw CancellationException("FATIR_STOPPED")
+            }
+
+            delay(900)
+            try {
+                run = chatRun(requestId)
+                pollFailures = 0
+                onStatus(run)
+            } catch (e: IOException) {
+                pollFailures++
+                onStatus(run.copy(status = "reconnecting", message = "Connection interrupted — reconnecting…"))
+                delay(backoffMillis(pollFailures))
+            }
+        }
+    }
+
+    suspend fun submitChat(requestBody: ChatRequest): ChatRunStatus = withContext(Dispatchers.IO) {
+        val request = authedRequest("$baseUrl/api/v1/chat/runs")
+            .post(json.encodeToString(requestBody).jsonBody())
+            .build()
+        executeJson(request)
+    }
+
+    suspend fun chatRun(requestId: String): ChatRunStatus = withContext(Dispatchers.IO) {
+        executeJson(
+            authedRequest("$baseUrl/api/v1/chat/runs/$requestId")
+                .get()
+                .build()
+        )
+    }
+
+    suspend fun cancelChatRun(requestId: String): ChatRunStatus = withContext(Dispatchers.IO) {
+        executeJson(
+            authedRequest("$baseUrl/api/v1/chat/runs/$requestId/cancel")
+                .post(ByteArray(0).toRequestBody(null))
+                .build()
+        )
+    }
+
     suspend fun approve(actionId: String): AgentResponse = action("/api/v1/approve", actionId)
 
     suspend fun deny(actionId: String): AgentResponse = action("/api/v1/deny", actionId)
@@ -71,7 +159,7 @@ class FatirApi(
         val url = "$baseUrl/api/v1/files/download".toHttpUrl().newBuilder()
             .addQueryParameter("path", path)
             .build()
-        client.newCall(authedRequest(url.toString()).get().build()).execute().use { response ->
+        transferClient.newCall(authedRequest(url.toString()).get().build()).execute().use { response ->
             if (!response.isSuccessful) throw apiError(response.code, response.body?.string())
             val body = response.body ?: throw IOException("Empty download response")
             body.byteStream().use { input ->
@@ -97,8 +185,22 @@ class FatirApi(
             .header("X-Fatir-Filename", filename)
             .post(body)
             .build()
-        executeJson(request)
+        executeJson(request, transferClient)
     }
+
+    suspend fun downloadToFile(path: String, file: File): File = withContext(Dispatchers.IO) {
+        file.parentFile?.mkdirs()
+        FileOutputStream(file).use { output -> download(path, output) }
+        file
+    }
+
+    fun mediaUrl(path: String): String =
+        "$baseUrl/api/v1/files/download".toHttpUrl().newBuilder()
+            .addQueryParameter("path", path)
+            .build()
+            .toString()
+
+    fun mediaHeaders(): Map<String, String> = mapOf("Authorization" to "Bearer $token")
 
     private suspend fun action(path: String, actionId: String): AgentResponse = withContext(Dispatchers.IO) {
         val payload = json.encodeToString(ActionRequest(actionId))
@@ -114,8 +216,11 @@ class FatirApi(
             .header("Authorization", "Bearer $token")
             .header("Accept", "application/json")
 
-    private inline fun <reified T> executeJson(request: Request): T {
-        client.newCall(request).execute().use { response ->
+    private inline fun <reified T> executeJson(
+        request: Request,
+        httpClient: OkHttpClient = controlClient
+    ): T {
+        httpClient.newCall(request).execute().use { response ->
             val raw = response.body?.string().orEmpty()
             if (!response.isSuccessful) throw apiError(response.code, raw)
             return json.decodeFromString(raw)
@@ -148,6 +253,11 @@ class FatirApi(
                 }
             }
         }
+    }
+
+    private fun backoffMillis(attempt: Int): Long {
+        val power = (attempt - 1).coerceIn(0, 3)
+        return (1_000L shl power).coerceAtMost(8_000L)
     }
 
     companion object {
