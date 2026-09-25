@@ -108,6 +108,28 @@ async fn persist(state: &SharedState) {
     let _ = memory::save_sessions(&snapshot);
 }
 
+async fn ensure_visible_assistant_history(state: &SharedState, session_id: &str, text: &str) {
+    if text.trim().is_empty() { return; }
+    let mut changed = false;
+    {
+        let mut sessions = state.sessions.lock().await;
+        if let Some(history) = sessions.get_mut(session_id) {
+            let already = history.iter().rev().find(|m| {
+                m.get("role").and_then(Value::as_str) == Some("assistant")
+                    && m.get("content").and_then(Value::as_str).map(|x| !x.trim().is_empty()).unwrap_or(false)
+            }).and_then(|m| m.get("content").and_then(Value::as_str))
+              .map(|last| last.trim() == text.trim())
+              .unwrap_or(false);
+            if !already {
+                history.push(json!({"role":"assistant","content":text,"fatir_meta":"visible_response"}));
+                trim_history(history);
+                changed = true;
+            }
+        }
+    }
+    if changed { persist(state).await; }
+}
+
 pub fn save_api_key(key: &str) -> Result<()> {
     if key.trim().is_empty() { return Err(anyhow!("API key cannot be empty")); }
     Entry::new("Fatir", "ollama_api_key")?.set_password(key.trim())?;
@@ -401,6 +423,7 @@ pub async fn send_message(state: SharedState, session_id: &str, text: &str, atta
         match tools::with_browser_execution_context(browser_ctx.allowed, browser_ctx.active, try_local_fast_path(&state, session_id, text, &token)).await {
             Ok(Some(response)) => {
                 let _ = adaptive::record_interaction(text, &response, started.elapsed().as_millis() as u64);
+                ensure_visible_assistant_history(&state, session_id, &response.text).await;
                 tools::hide_all_virtual_pointers().await;
                 end_run(&state, session_id).await;
                 return Ok(response);
@@ -416,6 +439,7 @@ pub async fn send_message(state: SharedState, session_id: &str, text: &str, atta
     ).await;
     if let Ok(response) = &result {
         let _ = adaptive::record_interaction(text, response, started.elapsed().as_millis() as u64);
+        ensure_visible_assistant_history(&state, session_id, &response.text).await;
     }
     tools::hide_all_virtual_pointers().await;
     end_run(&state, session_id).await;
