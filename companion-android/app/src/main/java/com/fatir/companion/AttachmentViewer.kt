@@ -261,7 +261,7 @@ private fun PdfPreview(file: File) {
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = { if (pageIndex > 0) pageIndex-- }, enabled = pageIndex > 0) { Text("Previous") }
-            Text("Page \${pageIndex + 1} / \${rendered?.pages ?: "…"}", modifier = Modifier.padding(horizontal = 12.dp))
+            Text("Page ${pageIndex + 1} / ${rendered?.pages ?: "…"}", modifier = Modifier.padding(horizontal = 12.dp))
             TextButton(
                 onClick = { if (rendered != null && pageIndex + 1 < rendered!!.pages) pageIndex++ },
                 enabled = rendered != null && pageIndex + 1 < rendered!!.pages
@@ -272,7 +272,7 @@ private fun PdfPreview(file: File) {
             else if (rendered == null) CircularProgressIndicator(Modifier.align(Alignment.Center))
             else Image(
                 rendered!!.bitmap.asImageBitmap(),
-                contentDescription = "PDF page \${pageIndex + 1}",
+                contentDescription = "PDF page ${pageIndex + 1}",
                 contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxSize()
             )
@@ -288,7 +288,7 @@ private fun TextPreview(file: File) {
         try {
             text = withContext(Dispatchers.IO) {
                 val bytes = file.inputStream().use { it.readNBytes(2_000_000) }
-                String(bytes, Charsets.UTF_8) + if (file.length() > bytes.size) "\\n\\n… preview truncated …" else ""
+                String(bytes, Charsets.UTF_8) + if (file.length() > bytes.size) "\n\n… preview truncated …" else ""
             }
         } catch (t: Throwable) { error = t.message }
     }
@@ -381,11 +381,11 @@ private suspend fun extractOpenXmlText(file: File, ext: String): String = withCo
                     .replace("&amp;", "&")
                     .replace("&lt;", "<")
                     .replace("&gt;", ">")
-                    .replace("&quot;", "\\\"")
+                    .replace("&quot;", "\"")
                     .replace(Regex("\\s+"), " ")
                     .trim()
                 if (clean.isNotBlank()) {
-                    if (out.isNotEmpty()) out.append("\\n\\n")
+                    if (out.isNotEmpty()) out.append("\n\n")
                     out.append(clean)
                 }
                 if (out.length > 200_000) break
