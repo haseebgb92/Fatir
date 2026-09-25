@@ -1,0 +1,6 @@
+{
+  "uuid": "fatir@local",
+  "name": "Fatir Personal Assistant",
+  "description": "Open Fatir, your resident personal assistant",
+  "max-instances": 1
+}

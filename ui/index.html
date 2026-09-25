@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="color-scheme" content="light" />
+  <title>Fatir</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar" data-tauri-drag-region>
+      <div class="identity" data-tauri-drag-region>
+        <div class="mark"><img src="assets/fatir-mark.png" alt="Fatir" /></div>
+        <div class="identity-copy" data-tauri-drag-region>
+          <div class="name-row"><div class="name">Fatir</div><span id="runBadge" class="run-badge hidden">0 running</span></div>
+          <div class="subtitle"><span id="statusDot" class="status-dot"></span><span id="statusText">Connecting…</span></div>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button id="pinBtn" class="icon-btn" title="Keep Fatir open" aria-label="Keep Fatir open">◇</button>
+        <button id="settingsBtn" class="icon-btn" title="Settings" aria-label="Settings">⚙</button>
+        <button id="closePanelBtn" class="icon-btn close-panel-btn" title="Hide Fatir" aria-label="Hide Fatir">×</button>
+      </div>
+    </header>
+
+    <div class="utilitybar">
+      <div id="modelPicker" class="model-picker">
+        <button id="modelButton" class="model-button" type="button" aria-haspopup="listbox" aria-expanded="false" title="Model">
+          <span class="model-spark">✦</span><span id="modelButtonText">Auto</span><span class="model-chevron">⌄</span>
+        </button>
+        <div id="modelMenu" class="model-menu hidden" role="listbox" aria-label="Choose model">
+          <div class="model-menu-head"><strong>Model</strong><small>Fatir routes capabilities automatically</small></div>
+          <button type="button" class="model-option" data-value="auto"><strong>Auto</strong><small>Fast path → local Linux brain → cloud escalation</small></button>
+          <button type="button" class="model-option" data-value="local"><strong>Local only</strong><small>Fast paths + local router · never cloud</small></button>
+          <button type="button" class="model-option" data-value="cloud"><strong>Cloud only</strong><small>Cloud reasoning · Gemma owns browser/vision work</small></button>
+          <div class="model-group-label">Cloud models</div>
+          <button type="button" class="model-option" data-value="gpt-oss:20b-cloud"><strong>GPT-OSS 20B</strong><small>Cloud · tools · lightweight</small></button>
+          <button type="button" class="model-option" data-value="gpt-oss:120b-cloud"><strong>GPT-OSS 120B</strong><small>Cloud · deeper reasoning · tools</small></button>
+          <button type="button" class="model-option" data-value="gemma4:31b-cloud"><strong>Gemma 4 31B</strong><small>Cloud · browser · vision · tools</small></button>
+          <button type="button" class="model-option" data-value="nemotron-3-nano:30b-cloud"><strong>Nemotron 3 Nano 30B</strong><small>Cloud · agentic · tools</small></button>
+          <button type="button" class="model-option" data-value="nemotron-3-super:cloud"><strong>Nemotron 3 Super</strong><small>Cloud · agentic · tools</small></button>
+          <button type="button" class="model-option" data-value="nemotron-3-ultra:cloud"><strong>Nemotron 3 Ultra</strong><small>Cloud · long-running agent workflows</small></button>
+          <div id="dynamicModels" class="dynamic-models"></div>
+        </div>
+      </div>
+      <div class="utility-actions">
+        <button id="computerControlBtn" class="icon-btn computer-control-btn" title="Fatir computer control active — click to take over" aria-label="Pause or resume Fatir computer control">⌖</button>
+        <button id="shareBtn" class="icon-btn share-header-btn" title="Share with Fatir" aria-label="Share with Fatir">↗</button>
+        <button id="opsBtn" class="icon-btn" title="Tasks, jobs and routines" aria-label="Tasks, jobs and routines">▤</button>
+        <button id="activityBtn" class="icon-btn" title="Activity and memory" aria-label="Activity and memory">◫</button>
+        <button id="newChatBtn" class="icon-btn" title="New chat" aria-label="New chat">＋</button>
+      </div>
+    </div>
+
+    <section id="conversation" class="conversation">
+      <div id="welcome" class="welcome">
+        <div class="welcome-head">
+          <div>
+            <div id="greeting" class="eyebrow">Your personal assistant</div>
+            <h1>What should I take care of?</h1>
+            <p>Fatir can work across files, apps, browser sessions and Linux itself — then remember where the work left off.</p>
+          </div>
+          <div class="welcome-mark"><img src="assets/fatir-mark.png" alt="Fatir calligraphy" /></div>
+        </div>
+
+        <div id="healthNotice" class="health-notice hidden"><span class="health-dot"></span><div><strong id="healthNoticeTitle">System attention</strong><small id="healthNoticeText"></small></div><button id="healthNoticeAction" type="button">Review</button></div>
+
+        <div id="systemStrip" class="system-strip">
+          <button class="metric" data-metric="cpu" title="Refresh system status"><span class="metric-label">CPU</span><strong id="cpuMetric">—</strong><small id="cpuDetail">Checking</small></button>
+          <button class="metric" data-metric="memory" title="Refresh system status"><span class="metric-label">Memory</span><strong id="memoryMetric">—</strong><small id="memoryDetail">Checking</small></button>
+          <button class="metric" data-metric="storage" title="Refresh system status"><span class="metric-label">Storage</span><strong id="storageMetric">—</strong><small id="storageDetail">Checking</small></button>
+        </div>
+
+        <div class="section-kicker"><span>Start with Fatir</span><small>Actions stay visible in the timeline</small></div>
+        <div class="quick-grid">
+          <button class="quick" data-prompt="Run a full health check on this PC. Check disk pressure, memory, top processes and anything that needs attention. Do not change anything yet."><span class="quick-icon">⌁</span><span class="quick-copy"><strong>System health</strong><small>Pressure, processes, storage</small></span></button>
+          <button class="quick" data-prompt="Find the largest files under my home folder. Tell me which are likely safe cleanup candidates, which need review, and do not delete anything."><span class="quick-icon">▥</span><span class="quick-copy"><strong>Free up space</strong><small>Find cleanup candidates safely</small></span></button>
+          <button class="quick" data-prefill="Install "><span class="quick-icon">↓</span><span class="quick-copy"><strong>Install software</strong><small>Detect source, install, verify</small></span></button>
+          <button id="quickRead" class="quick"><span class="quick-icon">⌕</span><span class="quick-copy"><strong>Understand a file</strong><small>PDF, image, code, document</small></span></button>
+          <button id="quickShareShot" class="quick"><span class="quick-icon">↗</span><span class="quick-copy"><strong>Share screenshot</strong><small>Latest capture · WhatsApp · email</small></span></button>
+          <button class="quick" data-prompt="Show me the desktop application windows you can control without moving my mouse, then wait for me to choose one."><span class="quick-icon">▦</span><span class="quick-copy"><strong>Work in an app</strong><small>Fatir cursor · your mouse stays free</small></span></button>
+          <button class="quick" data-prompt="Show my active Fatir tasks and background jobs, including what is waiting or blocked."><span class="quick-icon">↻</span><span class="quick-copy"><strong>Resume work</strong><small>Tasks, jobs and blockers</small></span></button>
+          <button class="quick" data-prompt="Analyze my Downloads for cleanup candidates, duplicates and old installers. Explain safe, uncertain and keep items. Do not delete anything yet."><span class="quick-icon">⌫</span><span class="quick-copy"><strong>Storage cleanup</strong><small>Downloads, duplicates, Trash</small></span></button>
+          <button class="quick" data-prompt="Show my saved routines, what each one does, and ask which one I want to run or improve."><span class="quick-icon">⟳</span><span class="quick-copy"><strong>Routines</strong><small>Repeat proven workflows</small></span></button>
+          <button class="quick" data-prefill="Research Amazon keyword "><span class="quick-icon">⌁</span><span class="quick-copy"><strong>Marketplace research</strong><small>Batch extraction · CSV · low model usage</small></span></button>
+          <button class="quick wide focus-card" data-prompt="Look at the Fatir-controlled browser and help me with what is on screen. Prefer browser_click_text and browser_page_summary over large DOM dumps or screenshots. Use stored credentials only if I explicitly approve them."><span class="quick-icon">◌</span><span class="quick-copy"><strong>Work in browser</strong><small>Visible Fatir cursor · DOM + CDP control</small></span><span class="quick-arrow">→</span></button>
+        </div>
+
+        <div class="privacy-line"><span>●</span> Local-first routing · Fatir virtual pointer · Adaptive learning · Keyring credentials</div>
+      </div>
+      <div id="messages"></div>
+      <div id="thinking" class="thinking hidden"><span></span><span></span><span></span><em id="thinkingText">Fatir is working</em><button id="inlineStop" type="button">Stop</button></div>
+    </section>
+
+    <section id="attachmentStrip" class="attachment-strip hidden"></section>
+
+    <footer class="composer-wrap">
+      <div class="composer">
+        <textarea id="composer" rows="1" placeholder="Ask Fatir to do something…"></textarea>
+        <div class="composer-bottom">
+          <div class="composer-tools">
+            <button id="attachBtn" class="tool-btn" title="Attach files" aria-label="Attach files">＋</button>
+            <button id="shotBtn" class="tool-btn" title="Take screenshot" aria-label="Take screenshot">▣</button>
+          </div>
+          <div class="composer-hint">Enter to send · Shift+Enter for line break</div>
+          <button id="sendBtn" class="send-btn" aria-label="Send">↑</button>
+        </div>
+      </div>
+    </footer>
+  </main>
+
+  <div id="opsSheet" class="sheet hidden" aria-hidden="true">
+    <div class="sheet-card command-center">
+      <div class="sheet-head"><div><span class="eyebrow">Fatir V1</span><h2>Command Center</h2><p>Verified tasks, persistent projects, terminals, jobs and reusable workflows.</p></div><button id="closeOps" class="icon-btn">×</button></div>
+      <div class="ops-summary">
+        <div><span>Active tasks</span><strong id="taskCount">—</strong></div>
+        <div><span>Running jobs</span><strong id="jobCount">—</strong></div>
+        <div><span>Routines</span><strong id="routineCount">—</strong></div>
+        <div><span>Projects</span><strong id="projectCount">—</strong></div>
+        <div><span>Alerts</span><strong id="alertCount">—</strong></div>
+      </div>
+      <div class="ops-tabs" role="tablist">
+        <button class="ops-tab active" data-tab="tasks" type="button">Tasks</button>
+        <button class="ops-tab" data-tab="jobs" type="button">Jobs</button>
+        <button class="ops-tab" data-tab="routines" type="button">Routines</button>
+        <button class="ops-tab" data-tab="projects" type="button">Projects</button>
+        <button class="ops-tab" data-tab="runtime" type="button">Runtime</button>
+        <button class="ops-tab" data-tab="cleanup" type="button">Cleanup</button>
+        <button class="ops-tab" data-tab="alerts" type="button">Alerts</button>
+        <button class="ops-tab" data-tab="undo" type="button">Undo</button>
+      </div>
+      <section id="opsTasks" class="ops-panel"><div id="taskList" class="ops-list"><div class="activity-empty">Loading…</div></div></section>
+      <section id="opsJobs" class="ops-panel hidden"><div id="jobList" class="ops-list"><div class="activity-empty">Loading…</div></div></section>
+      <section id="opsRoutines" class="ops-panel hidden"><div class="activity-title"><strong>Saved routines / Teach 3.0</strong><button id="captureRoutine" type="button">Capture recent</button></div><div id="routineListSaved" class="ops-list"><div class="activity-empty">Loading…</div></div></section>
+      <section id="opsProjects" class="ops-panel hidden"><div class="activity-title"><strong>Known projects</strong><small>Metadata only</small></div><div id="projectList" class="ops-list"><div class="activity-empty">Loading…</div></div></section>
+      <section id="opsRuntime" class="ops-panel hidden"><div class="activity-title"><strong>V1 runtime</strong><small>Task engine & continuity</small></div><div id="runtimeList" class="ops-list"><div class="activity-empty">Loading…</div></div></section>
+      <section id="opsCleanup" class="ops-panel hidden"><div id="cleanupSummary" class="cleanup-summary"><div class="activity-empty">Scanning Downloads…</div></div><div class="activity-title cleanup-actions"><strong>Cleanup candidates</strong><div><button id="scanDuplicates" type="button">Find duplicates</button><button id="reviewCleanup" type="button">Review with Fatir</button></div></div><div id="cleanupList" class="ops-list"><div class="activity-empty">Loading…</div></div></section>
+      <section id="opsAlerts" class="ops-panel hidden"><div id="alertList" class="ops-list"><div class="activity-empty">Loading…</div></div></section>
+      <section id="opsUndo" class="ops-panel hidden"><div class="activity-title"><strong>Rollback points</strong><small><span id="undoCount">—</span> available</small></div><div id="undoList" class="ops-list"><div class="activity-empty">Loading…</div></div></section>
+    </div>
+  </div>
+
+  <div id="activitySheet" class="sheet hidden" aria-hidden="true">
+    <div class="sheet-card">
+      <div class="sheet-head"><div><span class="eyebrow">Fatir on this PC</span><h2>Activity</h2><p>What Fatir did and what it has learned locally.</p></div><button id="closeActivity" class="icon-btn">×</button></div>
+      <div class="activity-summary">
+        <div><span>Learning</span><strong id="activityLearning">—</strong></div>
+        <div><span>Actions</span><strong id="activityActionsCount">—</strong></div>
+        <div><span>Status</span><strong id="activityConnection">—</strong></div>
+      </div>
+      <section class="activity-section">
+        <div class="activity-title"><strong>Recent actions</strong><button id="refreshActivity" type="button">Refresh</button></div>
+        <div id="activityList" class="activity-list"><div class="activity-empty">Loading…</div></div>
+      </section>
+      <section class="activity-section">
+        <div class="activity-title"><strong>Routine Fatir has learned</strong><small>Aggregate only</small></div>
+        <div id="routineGrid" class="routine-grid"></div>
+      </section>
+    </div>
+  </div>
+
+  <div id="shareSheet" class="sheet hidden" aria-hidden="true">
+    <div class="sheet-card share-card">
+      <div class="sheet-head"><div><span class="eyebrow">System share</span><h2>Share with Fatir</h2><p>Send any local file without a file-picker handoff.</p></div><button id="closeShare" class="icon-btn">×</button></div>
+      <div id="shareFileList" class="share-file-list"><div class="activity-empty">Choose a file to share.</div></div>
+      <div id="shareHome" class="share-panel">
+        <div class="share-actions">
+          <button id="shareWhatsApp" type="button"><span class="share-action-icon">W</span><strong>WhatsApp</strong><small>Fatir browser</small></button>
+          <button id="shareEmail" type="button"><span class="share-action-icon">@</span><strong>Email</strong><small>Gmail draft</small></button>
+          <button id="shareCopy" type="button"><span class="share-action-icon">⧉</span><strong>Copy</strong><small>Image / file</small></button>
+          <button id="shareCopyPath" type="button"><span class="share-action-icon">/</span><strong>Copy path</strong><small>Filesystem path</small></button>
+        </div>
+        <section class="share-history-section"><div class="activity-title"><strong>Recent shares</strong><small>Local history only</small></div><div id="shareHistory" class="share-history"><div class="activity-empty">No recent shares.</div></div></section>
+      </div>
+      <div id="shareWhatsAppPanel" class="share-panel hidden">
+        <button class="share-back" type="button">← Destinations</button>
+        <div class="share-destination-head"><div class="share-action-icon">W</div><div><strong>WhatsApp</strong><small>Choose a recent chat or search a name</small></div></div>
+        <div class="share-search-row"><input id="whatsappSearch" type="search" placeholder="Search WhatsApp contacts" autocomplete="off"/><button id="refreshWhatsApp" type="button">Refresh</button></div>
+        <div id="whatsappContacts" class="contact-list"><div class="activity-empty">Loading WhatsApp chats…</div></div>
+        <div class="share-manual-row"><input id="whatsappManual" type="text" placeholder="Or type a contact name"/><button id="sendWhatsAppManual" type="button">Send</button></div>
+      </div>
+      <div id="shareEmailPanel" class="share-panel hidden">
+        <button class="share-back" type="button">← Destinations</button>
+        <div class="share-destination-head"><div class="share-action-icon">@</div><div><strong>Email</strong><small>Fatir opens a Gmail draft and attaches the files</small></div></div>
+        <label class="share-field">To<input id="shareEmailTo" type="email" placeholder="name@example.com"/></label>
+        <label class="share-field">Subject<input id="shareEmailSubject" type="text" placeholder="Optional subject"/></label>
+        <button id="createEmailDraft" class="share-primary" type="button">Create Gmail draft</button>
+      </div>
+      <div id="shareStatus" class="share-status hidden"></div>
+    </div>
+  </div>
+
+  <div id="settingsModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head"><div><span class="eyebrow">Preferences</span><h2>Fatir Settings</h2><p>Connection, credentials, learning and local data.</p></div><button id="closeSettings" class="icon-btn">×</button></div>
+      <div class="setting-block appearance-block">
+        <div class="setting-title-row"><div><label>Sidebar appearance</label><p class="help">Fatir stays a light, focused companion beside your work.</p></div><span class="secure-pill gold-pill">Light</span></div>
+        <div class="panel-setting-grid">
+          <label class="panel-setting"><span>Side</span><select id="panelSide"><option value="right">Right</option><option value="left">Left</option></select></label>
+          <label class="panel-setting panel-width-setting"><span>Width <strong id="panelWidthValue">420 px</strong></span><input id="panelWidth" type="range" min="360" max="520" step="10" value="420" /></label>
+        </div>
+        <p class="help">Use the pin in the title bar when Fatir should remain visible while you work in another app.</p>
+      </div>
+      <div class="setting-block">
+        <label>Ollama Cloud API key</label>
+        <div class="secret-row"><input id="apiKey" type="password" autocomplete="off" placeholder="Stored securely in your Linux keyring" /><button id="saveKey">Save</button></div>
+        <p class="help">Leave empty to use your signed-in local Ollama service. Fatir never writes the key to its config files.</p>
+      </div>
+      <div class="setting-row"><div><strong>Connection</strong><small id="connectionDetail">Checking…</small></div><button id="testConnection">Test</button></div>
+
+      <div class="setting-block credential-block">
+        <div class="setting-title-row"><div><label>Credential broker</label><p class="help">Secrets stay in Linux Secret Service. Models only see the label/account, never the value.</p></div><span class="secure-pill">Keyring</span></div>
+        <div class="credential-form">
+          <input id="credLabel" type="text" placeholder="Label, e.g. GitHub token" />
+          <input id="credAccount" type="text" placeholder="Account / username" />
+          <input id="credSecret" type="password" autocomplete="new-password" placeholder="Secret value" />
+          <button id="saveCredential" type="button">Store securely</button>
+        </div>
+        <div id="credentialList" class="credential-list"><div class="activity-empty">No credentials loaded.</div></div>
+      </div>
+
+      <div class="setting-block learning-block">
+        <label>Background learning</label>
+        <p class="help learning-copy">Fatir learns routine patterns locally from apps, page URLs/titles and committed shell history. No keystrokes, form fields, passwords or OTPs.</p>
+        <label class="toggle-row"><span><strong>Learn in background</strong><small>Build local routine context while Fatir is resident</small></span><input id="learnEnabled" type="checkbox" /></label>
+        <label class="toggle-row"><span><strong>App activity</strong><small>Application and active-window patterns</small></span><input id="learnApps" type="checkbox" /></label>
+        <label class="toggle-row"><span><strong>Web activity</strong><small>Visited page URL/title history only</small></span><input id="learnWeb" type="checkbox" /></label>
+        <label class="toggle-row"><span><strong>Terminal routine</strong><small>Committed shell history with secret redaction</small></span><input id="learnTerminal" type="checkbox" /></label>
+        <div class="learning-foot"><small id="learningStats">Checking local learning…</small><button id="clearLearning" type="button">Clear learned activity</button></div>
+      </div>
+
+      <div class="setting-block adaptive-block">
+        <div class="setting-title-row"><div><label>Adaptive self-improvement</label><p class="help">Fatir learns which routes succeed, how long they take, and which repeated task classes may deserve a routine. It never rewrites its own source or bypasses approvals.</p></div><span class="secure-pill">Local</span></div>
+        <label class="toggle-row"><span><strong>Adaptive learning</strong><small>Learn from completed task outcomes</small></span><input id="adaptiveEnabled" type="checkbox" /></label>
+        <label class="toggle-row"><span><strong>Prefer local Linux brain</strong><small>Use fatir-local first for system, files, cleanup and software tasks</small></span><input id="adaptiveLocalFirst" type="checkbox" /></label>
+        <label class="toggle-row"><span><strong>Learn routing</strong><small>Prefer routes that repeatedly succeed for similar task classes</small></span><input id="adaptiveRoutes" type="checkbox" /></label>
+        <label class="toggle-row"><span><strong>Suggest routines</strong><small>Surface repeated workflows worth capturing</small></span><input id="adaptiveRoutines" type="checkbox" /></label>
+        <div class="learning-foot"><small id="adaptiveStats">Checking adaptive learning…</small><button id="clearAdaptive" type="button">Reset adaptive learning</button></div>
+        <div id="adaptiveSuggestions" class="adaptive-suggestions"></div>
+      </div>
+      <div class="setting-block proactive-block">
+        <label>Proactive assistant</label>
+        <p class="help">Fatir can quietly watch for actionable system conditions and finished background work. It never performs cleanup automatically.</p>
+        <label class="toggle-row"><span><strong>Proactive monitoring</strong><small>Disk pressure, Trash, Downloads and background jobs</small></span><input id="proactiveEnabled" type="checkbox" /></label>
+        <label class="toggle-row"><span><strong>Desktop notifications</strong><small>Show a Linux notification for new actionable events</small></span><input id="proactiveNotify" type="checkbox" /></label>
+        <div class="learning-foot"><small id="proactiveStats">Checking proactive status…</small><button id="checkProactive" type="button">Check now</button></div>
+      </div>
+      <div class="setting-block permission-block">
+        <div class="setting-title-row"><div><label>Approval policy</label><p class="help">Destructive actions, administrator changes and stored credentials always require approval. These preferences only control ordinary reversible work.</p></div><span class="secure-pill">V1</span></div>
+        <label class="toggle-row"><span><strong>Confirm file changes</strong><small>Ask before ordinary create/write/copy/move actions</small></span><input id="confirmFileChanges" type="checkbox" /></label>
+        <label class="toggle-row"><span><strong>Confirm shell commands</strong><small>Ask before arbitrary terminal commands</small></span><input id="confirmShellCommands" type="checkbox" /></label>
+        <label class="toggle-row"><span><strong>Confirm background jobs</strong><small>Ask before starting/stopping persistent local jobs</small></span><input id="confirmBackgroundJobs" type="checkbox" /></label>
+        <label class="toggle-row"><span><strong>Confirm routine metadata</strong><small>Ask before saving/removing workflow metadata</small></span><input id="confirmAutomationMetadata" type="checkbox" /></label>
+        <div class="learning-foot"><small id="permissionStats">Loading permission policy…</small></div>
+      </div>
+      <div class="setting-row"><div><strong>Local Fatir data</strong><small>Memory, tasks, jobs, rollback history and learned routine</small></div><button id="openData">Open</button></div>
+      <div class="setting-row danger-row"><div><strong>Remove cloud key</strong><small>Switch back to local Ollama authentication</small></div><button id="clearKey">Remove</button></div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

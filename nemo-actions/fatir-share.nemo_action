@@ -1,0 +1,9 @@
+[Nemo Action]
+Name=Share with Fatir
+Comment=Share selected local files using Fatir
+Exec=fatir --share %F
+Icon-Name=mail-send-symbolic
+Selection=any
+Extensions=any;
+Quote=double
+Dependencies=fatir;
