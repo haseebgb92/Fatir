@@ -114,7 +114,7 @@ TOKEN="$(cat "$TOKEN_FILE")"
 HEALTH="http://127.0.0.1:32145/api/v1/health"
 if ! curl -fsS --max-time 2 "$HEALTH" >/dev/null 2>&1; then
   if command -v fatir >/dev/null 2>&1; then
-    (fatir --background >/dev/null 2>&1 &) || true
+    (fatir >/dev/null 2>&1 &) || true
   fi
   for _ in $(seq 1 30); do
     curl -fsS --max-time 2 "$HEALTH" >/dev/null 2>&1 && break
