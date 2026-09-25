@@ -241,14 +241,14 @@ pub fn tool_definitions_for_hint(hint: &str) -> Vec<Value> {
     if any(&["project","repo","repository","git","workspace","codebase","source tree","gradle project","android project","rust project","node project"]) {
         allowed.extend(["project_inspect","project_remember","project_list","project_forget","terminal_session_create","terminal_session_list","terminal_session_set_cwd","terminal_session_exec","terminal_session_history"]);
     }
-    if any(&["schedule","scheduled","scheduler","daily","weekly","monthly","every day","every week","every month","remind me","reminder","timer","in 10 minutes","in 30 minutes","in an hour"]) {
+    if any(&["schedule","scheduled","scheduler","daily","weekly","monthly","every ","each day","each morning","each evening","every morning","every afternoon","every evening","every night","every day","every week","every month","remind me","reminder","timer","in 10 minutes","in 30 minutes","in an hour"]) {
         allowed.extend(["scheduled_job_create","scheduled_job_list","scheduled_job_cancel","agent_schedule_create","agent_schedule_list","agent_schedule_run_now","agent_schedule_cancel","credential_list","background_job_start","background_job_list","background_job_log","background_job_cancel"]);
     }
     if any(&["routine","workflow","again","as before","repeat","automation","automate","teach mode","teach me","record this workflow","record workflow","record task"]) {
         allowed.extend(["routine_create","routine_capture_recent","routine_list_saved","routine_prepare_run","routine_remove","teach_start","teach_status","teach_stop","teach_cancel"]);
     }
     if any(&["credential","secret","token","keyring","api key"]) {
-        allowed.extend(["credential_list","browser_fill_credential","desktop_fill_credential","run_shell_with_credentials"]);
+        allowed.extend(["credential_list","browser_fill_credential","browser_fill_credential_by_label","desktop_fill_credential","run_shell_with_credentials"]);
     }
     if any(&["alert","proactive","attention","monitor"]) {
         allowed.extend(["proactive_events","proactive_ack"]);
@@ -277,7 +277,7 @@ pub fn tool_definitions_for_local_hint(hint: &str) -> Vec<Value> {
     if any(&["service","systemctl","process","cpu","ram","memory","mount","network","port","permission","terminal","command","shell"]) {
         allowed.extend(["system_snapshot","health_report","run_shell_command","run_privileged_command","background_job_start","background_job_list","background_job_log","terminal_session_create","terminal_session_list","terminal_session_set_cwd","terminal_session_exec","terminal_session_history","terminal_session_close"]);
     }
-    if any(&["schedule","scheduled","scheduler","daily","weekly","monthly","every day","every week","every month","remind me","reminder","timer"]) {
+    if any(&["schedule","scheduled","scheduler","daily","weekly","monthly","every ","each day","each morning","each evening","every morning","every afternoon","every evening","every night","every day","every week","every month","remind me","reminder","timer"]) {
         allowed.extend(["scheduled_job_create","scheduled_job_list","scheduled_job_cancel"]);
     }
     if any(&["desktop","window","app","android studio","settings","dialog","button","control","screen","at-spi","accessibility","installed application","installed applications"])
@@ -324,7 +324,7 @@ pub fn tool_definitions_for_router_hint(hint: &str) -> Vec<Value> {
             "desktop_doctor","desktop_repair_accessibility","desktop_apps","desktop_windows","desktop_capabilities","desktop_elements","desktop_find","desktop_activate_named",
             "desktop_get_text","desktop_wait_for","desktop_launch_app","desktop_focus_window","desktop_key","desktop_type","desktop_observe","desktop_visual_action"
         ]);
-    } else if any(&["schedule","scheduled","scheduler","daily","weekly","monthly","every day","every week","every month","remind me","reminder","timer"]) {
+    } else if any(&["schedule","scheduled","scheduler","daily","weekly","monthly","every ","each day","each morning","each evening","every morning","every afternoon","every evening","every night","every day","every week","every month","remind me","reminder","timer"]) {
         allowed.extend(["scheduled_job_create","scheduled_job_list","scheduled_job_cancel"]);
     } else if any(&["update software","updates","update packages"]) {
         allowed.insert("software_updates");
