@@ -18,8 +18,8 @@ tauri_conf=json.loads((root/'src-tauri/tauri.conf.json').read_text())
 json.loads((root/'src-tauri/capabilities/default.json').read_text())
 json.loads((root/'cinnamon-applet/fatir@local/metadata.json').read_text())
 cargo=tomllib.loads((root/'src-tauri/Cargo.toml').read_text())
-assert cargo['package']['version']=='1.1.1'
-assert tauri_conf.get('version')=='1.1.1', 'Tauri bundle version mismatch'
+assert cargo['package']['version']=='1.2.0'
+assert tauri_conf.get('version')=='1.2.0', 'Tauri bundle version mismatch'
 assert (root/'src-tauri/src/adaptive.rs').exists()
 assert (root/'src-tauri/src/browser_memory.rs').exists()
 assert (root/'src-tauri/src/teach.rs').exists()
