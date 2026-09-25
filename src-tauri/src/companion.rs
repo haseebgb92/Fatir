@@ -21,6 +21,8 @@ use tokio_util::io::ReaderStream;
 use uuid::Uuid;
 
 use crate::{
+    agent_schedules,
+    chats,
     models::Attachment,
     ollama::{self, SharedState},
 };
@@ -82,6 +84,16 @@ struct PathQuery {
 #[derive(Debug, Deserialize)]
 struct UploadQuery {
     directory: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ChatHistoryQuery {
+    session_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct IdRequest {
+    id: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -162,6 +174,11 @@ impl CompanionService {
             .route("/api/v1/chat", post(chat))
             .route("/api/v1/approve", post(approve))
             .route("/api/v1/deny", post(deny))
+            .route("/api/v1/chats", get(chat_list))
+            .route("/api/v1/chats/history", get(chat_history))
+            .route("/api/v1/agent-schedules", get(agent_schedule_list))
+            .route("/api/v1/agent-schedules/run", post(agent_schedule_run))
+            .route("/api/v1/agent-schedules/cancel", post(agent_schedule_cancel))
             .route("/api/v1/files/roots", get(file_roots))
             .route("/api/v1/files/list", get(list_files))
             .route("/api/v1/files/download", get(download_file))
@@ -281,6 +298,59 @@ async fn deny(
     match ollama::deny_action(state.shared.clone(), &request.action_id, &mode).await {
         Ok(result) => Json(result).into_response(),
         Err(e) => error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()),
+    }
+}
+
+
+async fn chat_list(State(state): State<CompanionService>, headers: HeaderMap) -> Response {
+    if let Err(response) = require_auth(&headers, &state) { return response; }
+    match chats::list(&state.shared).await {
+        Ok(rows) => Json(serde_json::json!({"chats":rows})).into_response(),
+        Err(e) => error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()),
+    }
+}
+
+async fn chat_history(
+    State(state): State<CompanionService>,
+    headers: HeaderMap,
+    Query(query): Query<ChatHistoryQuery>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) { return response; }
+    match chats::history(&state.shared, &query.session_id).await {
+        Ok(row) => Json(row).into_response(),
+        Err(e) => error(StatusCode::NOT_FOUND, &e.to_string()),
+    }
+}
+
+async fn agent_schedule_list(State(state): State<CompanionService>, headers: HeaderMap) -> Response {
+    if let Err(response) = require_auth(&headers, &state) { return response; }
+    match agent_schedules::list() {
+        Ok(rows) => Json(serde_json::json!({"schedules":rows})).into_response(),
+        Err(e) => error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()),
+    }
+}
+
+async fn agent_schedule_run(
+    State(state): State<CompanionService>,
+    headers: HeaderMap,
+    Json(request): Json<IdRequest>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) { return response; }
+    match agent_schedules::run_now(&request.id) {
+        Ok(row) => Json(row).into_response(),
+        Err(e) => error(StatusCode::BAD_REQUEST, &e.to_string()),
+    }
+}
+
+async fn agent_schedule_cancel(
+    State(state): State<CompanionService>,
+    headers: HeaderMap,
+    Json(request): Json<IdRequest>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) { return response; }
+    match agent_schedules::cancel(&request.id) {
+        Ok(row) => Json(row).into_response(),
+        Err(e) => error(StatusCode::BAD_REQUEST, &e.to_string()),
     }
 }
 
