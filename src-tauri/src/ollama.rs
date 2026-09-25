@@ -505,12 +505,39 @@ fn parse_amazon_fast_path(text: &str) -> Option<(String, usize)> {
     Some((keyword, limit))
 }
 
-async fn execute_fast_tool(name: &str, args: &Value, token: &CancellationToken) -> Result<(String, TraceItem)> {
-    let key = api_key();
+fn foreground_tool_timeout_secs(name: &str) -> u64 {
+    match name {
+        "take_screenshot" => 30,
+        "browser_observe" | "desktop_observe" => 60,
+        "amazon_keyword_research" => 300,
+        "share_whatsapp_send" | "share_email_draft" => 240,
+        "run_shell_command" | "run_privileged_command" => 300,
+        _ if name.starts_with("browser_") || name.starts_with("desktop_") => 120,
+        _ => 180,
+    }
+}
+
+async fn execute_agent_tool(
+    name: &str,
+    args: &Value,
+    key: Option<&str>,
+    token: &CancellationToken,
+) -> Result<(String, TraceItem)> {
+    let timeout = std::time::Duration::from_secs(foreground_tool_timeout_secs(name));
     tokio::select! {
         _ = token.cancelled() => Err(anyhow!("FATIR_STOPPED")),
-        result = tools::execute(name, args, key.as_deref()) => result,
+        result = tokio::time::timeout(timeout, tools::execute(name, args, key)) => {
+            match result {
+                Ok(result) => result,
+                Err(_) => Err(anyhow!("FATIR_TOOL_TIMEOUT: {name} exceeded the foreground execution limit; retry or move long work to a background job")),
+            }
+        }
     }
+}
+
+async fn execute_fast_tool(name: &str, args: &Value, token: &CancellationToken) -> Result<(String, TraceItem)> {
+    let key = api_key();
+    execute_agent_tool(name, args, key.as_deref(), token).await
 }
 
 async fn try_local_fast_path(state: &SharedState, session_id: &str, text: &str, token: &CancellationToken) -> Result<Option<AgentResponse>> {
@@ -1491,7 +1518,7 @@ async fn agent_loop(state: SharedState, session_id: &str, mode: &str, token: Can
                 });
             }
             let key = api_key();
-            match tools::execute(&name, &args, key.as_deref()).await {
+            match execute_agent_tool(&name, &args, key.as_deref(), &token).await {
                 Ok((result, item)) => {
                     trace.push(item);
                     let _ = memory::log_action(&name, &args, &result, "done");
