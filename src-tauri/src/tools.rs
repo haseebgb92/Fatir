@@ -648,6 +648,13 @@ fn resources_for(tool: &str, args: &Value, result: &str) -> Vec<ResourceRef> {
                 push(path.to_string(), label, if Path::new(path).is_dir(){"folder".into()}else{"file".into()});
             }
         }
+        "take_screenshot" => {
+            let path = result.trim();
+            if !path.is_empty() && Path::new(path).is_file() {
+                let label = Path::new(path).file_name().and_then(|x| x.to_str()).unwrap_or("Screenshot");
+                push(path.to_string(), label.to_string(), "file".into());
+            }
+        }
         "share_latest_screenshot" => {
             if let Ok(v)=serde_json::from_str::<Value>(result){ if let Some(path)=v.get("path").and_then(Value::as_str){ let label=v.get("name").and_then(Value::as_str).unwrap_or("Latest screenshot"); push(path.to_string(),label.to_string(),"file".into()); } }
         }
