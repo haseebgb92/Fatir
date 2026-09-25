@@ -381,8 +381,8 @@ private suspend fun extractOpenXmlText(file: File, ext: String): String = withCo
                     .replace("&amp;", "&")
                     .replace("&lt;", "<")
                     .replace("&gt;", ">")
-                    .replace("&quot;", "\\"")
-                    .replace(Regex("\\\\s+"), " ")
+                    .replace("&quot;", "\\\"")
+                    .replace(Regex("\\s+"), " ")
                     .trim()
                 if (clean.isNotBlank()) {
                     if (out.isNotEmpty()) out.append("\\n\\n")
