@@ -1,4 +1,4 @@
-# Fatir v1.1.1 Release Gate
+# Fatir v1.2.0 Release Gate
 
 Fatir V1 is the consolidation release that turns browser, Linux desktop, terminal, filesystem, projects, background jobs, schedules, memory and taught routines into one verified execution system.
 
@@ -11,7 +11,8 @@ Fatir V1 is the consolidation release that turns browser, Linux desktop, termina
 - Headless browser operation is available only when the current request explicitly says `headless`; `background` never implies headless.
 - Stored credentials never enter model context.
 - Destructive, uninstall/remove/wipe, privileged/system and credential-bearing actions remain approval-gated.
-- Persistent schedules execute local shell commands only; scheduling never grants browser/headless permission.
+- Local shell schedules remain command-only. Scheduled Agent/Web Tasks may wake Fatir later, but browser mode is granted explicitly per schedule and stored credentials are reusable only when individually pre-authorized at schedule creation.
+- Authentication challenges such as OTP/authenticator, CAPTCHA, passkey, or security-key checks must pause for human takeover; Fatir never guesses or bypasses them.
 
 ## First-run smoke test
 
