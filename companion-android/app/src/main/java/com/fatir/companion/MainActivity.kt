@@ -49,7 +49,7 @@ private val FatirGreen = Color(0xFF2F8D5B)
 private val FatirRed = Color(0xFFB94A48)
 private val FatirBorder = Color(0xFFE8E1D3)
 
-private enum class Screen { CHAT, FILES, TRANSFERS, SETTINGS }
+private enum class Screen { CHAT, HISTORY, SCHEDULES, FILES, TRANSFERS, SETTINGS }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
@@ -111,6 +111,13 @@ private fun FatirApp() {
 
     val transfers = remember { mutableStateListOf<TransferItem>() }
     var pendingDownload by remember { mutableStateOf<FileEntry?>(null) }
+
+    var historySessions by remember { mutableStateOf<List<ChatSessionSummary>>(emptyList()) }
+    var historyLoading by remember { mutableStateOf(false) }
+    var historyError by remember { mutableStateOf<String?>(null) }
+    var agentSchedules by remember { mutableStateOf<List<AgentScheduleItem>>(emptyList()) }
+    var schedulesLoading by remember { mutableStateOf(false) }
+    var schedulesError by remember { mutableStateOf<String?>(null) }
 
     suspend fun connectNow(url: String, key: String, save: Boolean) {
         connecting = true
@@ -200,6 +207,31 @@ private fun FatirApp() {
         }
     }
 
+    LaunchedEffect(screen) {
+        if (screen == Screen.HISTORY) {
+            historyLoading = true
+            historyError = null
+            try {
+                historySessions = api!!.chatSessions().sessions
+            } catch (t: Throwable) {
+                historyError = t.message ?: "Unable to load chat history"
+            } finally {
+                historyLoading = false
+            }
+        }
+        if (screen == Screen.SCHEDULES) {
+            schedulesLoading = true
+            schedulesError = null
+            try {
+                agentSchedules = api!!.agentSchedules().schedules
+            } catch (t: Throwable) {
+                schedulesError = t.message ?: "Unable to load scheduled tasks"
+            } finally {
+                schedulesLoading = false
+            }
+        }
+    }
+
     fun send() {
         val text = composer.trim()
         if (text.isBlank() || sending) return
@@ -262,6 +294,48 @@ private fun FatirApp() {
                         }
                     },
                     onRemoveAttachment = { linuxAttachments.remove(it) }
+                )
+
+                Screen.HISTORY -> HistoryScreen(
+                    sessions = historySessions,
+                    loading = historyLoading,
+                    error = historyError,
+                    onOpen = { chat ->
+                        scope.launch {
+                            try {
+                                val loaded = api!!.chatMessages(chat.session_id)
+                                messages.clear()
+                                loaded.messages.forEach { turn ->
+                                    messages += UiMessage(
+                                        fromUser = turn.role == "user",
+                                        text = turn.text,
+                                        model = turn.model
+                                    )
+                                }
+                                sessionId = chat.session_id
+                                pending = null
+                                screen = Screen.CHAT
+                            } catch (t: Throwable) {
+                                historyError = t.message ?: "Unable to open chat"
+                            }
+                        }
+                    }
+                )
+
+                Screen.SCHEDULES -> SchedulesScreen(
+                    schedules = agentSchedules,
+                    loading = schedulesLoading,
+                    error = schedulesError,
+                    onRun = { schedule ->
+                        scope.launch {
+                            try {
+                                api!!.runAgentSchedule(schedule.id)
+                                agentSchedules = api!!.agentSchedules().schedules
+                            } catch (t: Throwable) {
+                                schedulesError = t.message ?: "Unable to run scheduled task"
+                            }
+                        }
+                    }
                 )
 
                 Screen.FILES -> FilesScreen(
@@ -404,6 +478,8 @@ private fun Drawer(device: String, selected: Screen, onSelect: (Screen) -> Unit)
                 Text(device, color = FatirMuted, fontSize = 13.sp)
             }
             DrawerItem("Chat", Icons.Outlined.Chat, Screen.CHAT, selected, onSelect)
+            DrawerItem("Chats", Icons.Outlined.History, Screen.HISTORY, selected, onSelect)
+            DrawerItem("Schedules", Icons.Outlined.Schedule, Screen.SCHEDULES, selected, onSelect)
             DrawerItem("Linux Files", Icons.Outlined.Folder, Screen.FILES, selected, onSelect)
             DrawerItem("Transfers", Icons.Outlined.SwapVert, Screen.TRANSFERS, selected, onSelect)
             DrawerItem("Settings", Icons.Outlined.Settings, Screen.SETTINGS, selected, onSelect)
@@ -631,6 +707,110 @@ private fun Composer(
     }
 }
 
+
+@Composable
+private fun HistoryScreen(
+    sessions: List<ChatSessionSummary>,
+    loading: Boolean,
+    error: String?,
+    onOpen: (ChatSessionSummary) -> Unit
+) {
+    Column(Modifier.fillMaxSize().padding(top = 104.dp, start = 16.dp, end = 16.dp)) {
+        Text("Chats", fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+        Text("Synced with Fatir on Linux", color = FatirMuted, modifier = Modifier.padding(top = 3.dp, bottom = 14.dp))
+        if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
+        if (!error.isNullOrBlank()) Text(error, color = FatirRed, modifier = Modifier.padding(vertical = 12.dp))
+        if (!loading && sessions.isEmpty()) {
+            InfoCard("No saved chats yet", "Desktop and Companion conversations will appear here automatically.")
+        } else {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(sessions, key = { it.session_id }) { chat ->
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = FatirSurface,
+                        border = BorderStroke(1.dp, FatirBorder),
+                        modifier = Modifier.fillMaxWidth().clickable { onOpen(chat) }
+                    ) {
+                        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Outlined.ChatBubbleOutline, null, tint = FatirGold)
+                            Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(chat.title, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(chat.preview, color = FatirMuted, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            }
+                            Text(chat.messages.toString(), color = FatirMuted, fontSize = 11.sp)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SchedulesScreen(
+    schedules: List<AgentScheduleItem>,
+    loading: Boolean,
+    error: String?,
+    onRun: (AgentScheduleItem) -> Unit
+) {
+    Column(Modifier.fillMaxSize().padding(top = 104.dp, start = 16.dp, end = 16.dp)) {
+        Text("Scheduled Agent Tasks", fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+        Text("Fatir can wake up and work without the phone being open.", color = FatirMuted, modifier = Modifier.padding(top = 3.dp, bottom = 14.dp))
+        if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
+        if (!error.isNullOrBlank()) Text(error, color = FatirRed, modifier = Modifier.padding(vertical = 12.dp))
+        if (!loading && schedules.isEmpty()) {
+            InfoCard("No agent schedules yet", "Ask Fatir to create one, for example: every morning check Gmail and summarize anything important.")
+        } else {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                items(schedules, key = { it.id }) { item ->
+                    Surface(
+                        shape = RoundedCornerShape(18.dp),
+                        color = FatirSurface,
+                        border = BorderStroke(1.dp, FatirBorder)
+                    ) {
+                        Column(Modifier.padding(15.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(item.label, fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        listOf(item.trigger, item.browser_mode).filter { it.isNotBlank() }.joinToString(" · "),
+                                        color = FatirMuted,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                                Surface(
+                                    shape = RoundedCornerShape(999.dp),
+                                    color = if (item.last_status == "completed") Color(0xFFE8F3EC) else FatirGoldSoft
+                                ) {
+                                    Text(
+                                        item.last_status ?: item.timer_state,
+                                        fontSize = 10.sp,
+                                        color = if (item.last_status == "completed") FatirGreen else FatirInk,
+                                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp)
+                                    )
+                                }
+                            }
+                            if (item.prompt.isNotBlank()) {
+                                Text(item.prompt, fontSize = 12.sp, color = FatirMuted, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 10.dp))
+                            }
+                            if (!item.last_result.isNullOrBlank()) {
+                                Text(item.last_result!!, fontSize = 12.sp, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp))
+                            }
+                            TextButton(onClick = { onRun(item) }, modifier = Modifier.align(Alignment.End)) {
+                                Icon(Icons.Outlined.PlayArrow, null, Modifier.size(17.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Run now")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+
 @Composable
 private fun FilesScreen(
     path: String?,
@@ -715,7 +895,7 @@ private fun FilesScreen(
 private fun TransfersScreen(transfers: SnapshotStateList<TransferItem>) {
     Column(Modifier.fillMaxSize().padding(top = 104.dp, start = 16.dp, end = 16.dp)) {
         Text("Transfers", fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
-        Text("Phone ↔ Linux", color = FatirMuted, modifier = Modifier.padding(top = 3.dp, bottom = 14.dp))
+        Text("Phone ↔ Linux · Tailscale ready", color = FatirMuted, modifier = Modifier.padding(top = 3.dp, bottom = 14.dp))
         if (transfers.isEmpty()) InfoCard("No transfers yet", "Downloads from Linux and uploads from this phone will appear here.")
         else LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(transfers) { item ->
