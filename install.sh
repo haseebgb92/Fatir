@@ -212,7 +212,7 @@ if command -v ollama >/dev/null 2>&1; then
   fi
 fi
 
-echo "[5/9] Validating Fatir v1.1.1 source…"
+echo "[5/9] Validating Fatir v1.2.0 source…"
 cd "$ROOT"
 ./scripts/validate.sh
 
