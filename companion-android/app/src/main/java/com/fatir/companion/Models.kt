@@ -73,10 +73,22 @@ data class ChatEnvelope(
 
 @Serializable
 data class ChatRequest(
+    val request_id: String? = null,
     val session_id: String? = null,
     val text: String,
     val mode: String = "auto",
     val attachments: List<String> = emptyList()
+)
+
+@Serializable
+data class ChatRunStatus(
+    val request_id: String,
+    val session_id: String,
+    val status: String,
+    val message: String = "",
+    val updated_unix: Long = 0,
+    val response: AgentResponse? = null,
+    val error: String? = null
 )
 
 @Serializable
@@ -96,7 +108,8 @@ data class UploadResponse(
 data class UiMessage(
     val fromUser: Boolean,
     val text: String,
-    val model: String? = null
+    val model: String? = null,
+    val attachments: List<ResourceRef> = emptyList()
 )
 
 data class TransferItem(
