@@ -2,7 +2,7 @@ name: Companion Local MVP
 
 on:
   push:
-    branches: [companion-local-mvp]
+    branches: [companion-local-mvp, agent-web-schedules]
     paths:
       - "src-tauri/**"
       - "companion-android/**"
@@ -30,6 +30,9 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Static validation
+        run: bash scripts/validate.sh
+
       - name: Cargo check
         run: cargo check --manifest-path src-tauri/Cargo.toml
 
@@ -56,7 +59,7 @@ jobs:
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: fatir-companion-local-debug
+          name: fatir-companion-agent-schedules-debug
           path: companion-android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
