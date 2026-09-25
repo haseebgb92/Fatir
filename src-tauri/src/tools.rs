@@ -324,7 +324,7 @@ pub fn tool_definitions_for_router_hint(hint: &str) -> Vec<Value> {
             "desktop_get_text","desktop_wait_for","desktop_launch_app","desktop_focus_window","desktop_key","desktop_type","desktop_observe","desktop_visual_action"
         ]);
     } else if any(&["schedule","scheduled","scheduler","daily","weekly","monthly","every day","every week","every month","remind me","reminder","timer"]) {
-        allowed.extend(["scheduled_job_create","scheduled_job_list","scheduled_job_cancel"]);
+        allowed.extend(["scheduled_job_create","scheduled_job_list","scheduled_job_cancel","agent_schedule_create","agent_schedule_list","agent_schedule_cancel"]);
     } else if any(&["update software","updates","update packages"]) {
         allowed.insert("software_updates");
     }
