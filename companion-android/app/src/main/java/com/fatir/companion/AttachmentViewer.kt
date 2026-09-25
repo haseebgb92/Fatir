@@ -402,7 +402,7 @@ private suspend fun extractOpenXmlText(file: File, ext: String): String = withCo
             zip.closeEntry()
         }
     }
-    if (out.isEmpty()) "No readable text was found in this document." else out.take(200_000)
+    if (out.isEmpty()) "No readable text was found in this document." else out.toString().take(200_000)
 }
 
 private fun previewCacheFile(context: Context, resource: ResourceRef): File {
