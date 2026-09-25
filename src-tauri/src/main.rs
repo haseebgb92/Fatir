@@ -26,6 +26,7 @@ mod app_playbooks;
 mod permissions;
 mod schedules;
 mod companion;
+mod cloud_relay;
 
 use models::{AgentResponse, Attachment, SystemSnapshot};
 use ollama::SharedState;
@@ -104,6 +105,11 @@ struct AppStatus {
 #[tauri::command]
 fn companion_status(state: tauri::State<'_, companion::CompanionService>) -> companion::CompanionInfo {
     state.info()
+}
+
+#[tauri::command]
+fn cloud_relay_status() -> cloud_relay::RelayStatus {
+    cloud_relay::status()
 }
 
 #[tauri::command]
@@ -552,6 +558,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             app_status,
             companion_status,
+            cloud_relay_status,
             list_models,
             save_api_key,
             clear_api_key,
@@ -622,11 +629,14 @@ fn main() {
             tauri::async_runtime::spawn(observer::run_forever());
             tauri::async_runtime::spawn(proactive::monitor_forever());
             let companion = app.state::<companion::CompanionService>().inner().clone();
+            let relay_local_token = companion.info().token.clone();
+            let companion_server = companion.clone();
             tauri::async_runtime::spawn(async move {
-                if let Err(err) = companion.serve().await {
+                if let Err(err) = companion_server.serve().await {
                     eprintln!("Fatir Companion LAN service failed: {err}");
                 }
             });
+            tauri::async_runtime::spawn(cloud_relay::run_forever(relay_local_token));
             if !background || !startup_share.is_empty() { show_panel(app.handle()); }
             Ok(())
         })
