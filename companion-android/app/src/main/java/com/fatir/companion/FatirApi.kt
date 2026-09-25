@@ -7,7 +7,6 @@ import java.io.InputStream
 import java.io.OutputStream
 import java.util.UUID
 import java.util.concurrent.TimeUnit
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -91,27 +90,28 @@ class FatirApi(
             }
         }
 
-        onStatus(run)
+        var current = run ?: throw IOException("Fatir did not acknowledge the request")
+        onStatus(current)
         var pollFailures = 0
         while (true) {
-            when (run.status) {
+            when (current.status) {
                 "completed" -> {
-                    val response = run.response ?: throw IOException("Fatir completed without a response")
-                    return ChatEnvelope(run.session_id, response)
+                    val response = current.response ?: throw IOException("Fatir completed without a response")
+                    return ChatEnvelope(current.session_id, response)
                 }
-                "error" -> throw IOException(run.error ?: run.message.ifBlank { "Fatir hit a problem" })
-                "timeout" -> throw IOException(run.error ?: "FATIR_TIMEOUT")
-                "cancelled" -> throw CancellationException("FATIR_STOPPED")
+                "error" -> throw IOException(current.error ?: current.message.ifBlank { "Fatir hit a problem" })
+                "timeout" -> throw IOException(current.error ?: "FATIR_TIMEOUT")
+                "cancelled" -> throw IOException("FATIR_STOPPED")
             }
 
             delay(900)
             try {
-                run = chatRun(requestId)
+                current = chatRun(requestId)
                 pollFailures = 0
-                onStatus(run)
+                onStatus(current)
             } catch (e: IOException) {
                 pollFailures++
-                onStatus(run.copy(status = "reconnecting", message = "Connection interrupted — reconnecting…"))
+                onStatus(current.copy(status = "reconnecting", message = "Connection interrupted — reconnecting…"))
                 delay(backoffMillis(pollFailures))
             }
         }
