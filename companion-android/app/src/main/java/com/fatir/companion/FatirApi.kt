@@ -56,6 +56,26 @@ class FatirApi(
 
     suspend fun deny(actionId: String): AgentResponse = action("/api/v1/deny", actionId)
 
+
+    suspend fun chats(): ChatListResponse = withContext(Dispatchers.IO) {
+        executeJson(authedRequest("$baseUrl/api/v1/chats").get().build())
+    }
+
+    suspend fun chatHistory(sessionId: String): ChatHistoryResponse = withContext(Dispatchers.IO) {
+        val url = "$baseUrl/api/v1/chats/history".toHttpUrl().newBuilder()
+            .addQueryParameter("session_id", sessionId)
+            .build()
+        executeJson(authedRequest(url.toString()).get().build())
+    }
+
+    suspend fun agentSchedules(): AgentScheduleListResponse = withContext(Dispatchers.IO) {
+        executeJson(authedRequest("$baseUrl/api/v1/agent-schedules").get().build())
+    }
+
+    suspend fun runAgentSchedule(id: String) = scheduleAction("/api/v1/agent-schedules/run", id)
+
+    suspend fun cancelAgentSchedule(id: String) = scheduleAction("/api/v1/agent-schedules/cancel", id)
+
     suspend fun roots(): RootsResponse = withContext(Dispatchers.IO) {
         executeJson(authedRequest("$baseUrl/api/v1/files/roots").get().build())
     }
@@ -96,6 +116,14 @@ class FatirApi(
         val request = authedRequest(url.toString())
             .header("X-Fatir-Filename", filename)
             .post(body)
+            .build()
+        executeJson(request)
+    }
+
+    private suspend fun scheduleAction(path: String, id: String): kotlinx.serialization.json.JsonElement = withContext(Dispatchers.IO) {
+        val payload = json.encodeToString(IdRequest(id))
+        val request = authedRequest("$baseUrl$path")
+            .post(payload.jsonBody())
             .build()
         executeJson(request)
     }
