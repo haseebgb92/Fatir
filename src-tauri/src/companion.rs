@@ -21,6 +21,8 @@ use tokio_util::io::ReaderStream;
 use uuid::Uuid;
 
 use crate::{
+    agent_schedules,
+    chat_history,
     models::Attachment,
     ollama::{self, SharedState},
 };
@@ -82,6 +84,17 @@ struct PathQuery {
 #[derive(Debug, Deserialize)]
 struct UploadQuery {
     directory: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ChatHistoryQuery {
+    session_id: Option<String>,
+    limit: Option<usize>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ScheduleRunQuery {
+    id: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -166,6 +179,10 @@ impl CompanionService {
             .route("/api/v1/files/list", get(list_files))
             .route("/api/v1/files/download", get(download_file))
             .route("/api/v1/files/upload", post(upload_file))
+            .route("/api/v1/chats", get(chat_sessions))
+            .route("/api/v1/chats/messages", get(chat_messages))
+            .route("/api/v1/agent/schedules", get(agent_schedule_list))
+            .route("/api/v1/agent/schedule/run", post(agent_schedule_run))
             .with_state(self);
 
         let listener = TcpListener::bind(("0.0.0.0", COMPANION_PORT)).await?;
@@ -468,6 +485,56 @@ async fn upload_file(
         "name": destination.file_name().and_then(|v| v.to_str()).unwrap_or(&filename)
     }))
     .into_response()
+}
+
+
+async fn chat_sessions(
+    State(state): State<CompanionService>,
+    headers: HeaderMap,
+    Query(query): Query<ChatHistoryQuery>,
+) -> Response {
+    if let Err(response)=require_auth(&headers,&state) { return response; }
+    Json(serde_json::json!({
+        "sessions": chat_history::sessions(query.limit.unwrap_or(50))
+    })).into_response()
+}
+
+async fn chat_messages(
+    State(state): State<CompanionService>,
+    headers: HeaderMap,
+    Query(query): Query<ChatHistoryQuery>,
+) -> Response {
+    if let Err(response)=require_auth(&headers,&state) { return response; }
+    let Some(session_id)=query.session_id.as_deref().filter(|s|!s.trim().is_empty()) else {
+        return error(StatusCode::BAD_REQUEST,"Missing session_id");
+    };
+    Json(serde_json::json!({
+        "session_id": session_id,
+        "messages": chat_history::messages(session_id,query.limit.unwrap_or(300))
+    })).into_response()
+}
+
+async fn agent_schedule_list(
+    State(state): State<CompanionService>,
+    headers: HeaderMap,
+) -> Response {
+    if let Err(response)=require_auth(&headers,&state) { return response; }
+    match agent_schedules::list() {
+        Ok(items)=>Json(serde_json::json!({"schedules":items})).into_response(),
+        Err(e)=>error(StatusCode::INTERNAL_SERVER_ERROR,&e.to_string()),
+    }
+}
+
+async fn agent_schedule_run(
+    State(state): State<CompanionService>,
+    headers: HeaderMap,
+    Query(query): Query<ScheduleRunQuery>,
+) -> Response {
+    if let Err(response)=require_auth(&headers,&state) { return response; }
+    match agent_schedules::run(state.shared.clone(),&query.id).await {
+        Ok(value)=>Json(value).into_response(),
+        Err(e)=>error(StatusCode::INTERNAL_SERVER_ERROR,&e.to_string()),
+    }
 }
 
 fn require_auth(headers: &HeaderMap, state: &CompanionService) -> Result<(), Response> {
