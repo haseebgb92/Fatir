@@ -407,11 +407,12 @@ fn v1_status() -> Result<serde_json::Value, String> {
     let projects=projects::list().map_err(|e|e.to_string())?;
     let terminals=terminal_sessions::list().map_err(|e|e.to_string())?;
     let schedules=schedules::list().map_err(|e|e.to_string())?;
+    let agent_schedules=agent_schedules::list().map_err(|e|e.to_string())?;
     let failures=memory::failure_summary(300).map_err(|e|e.to_string())?;
     Ok(serde_json::json!({
         "version":env!("CARGO_PKG_VERSION"),"engine":orchestrator::status(),
         "active_tasks":tasks.len(),"running_jobs":jobs.iter().filter(|j|j.get("status").and_then(serde_json::Value::as_str)==Some("running")).count(),
-        "projects":projects.len(),"terminal_sessions":terminals.len(),"schedules":schedules.len(),"teach":teach::status(),"permissions":permissions::status(),"computer_control":pointer::status(),"failures":failures
+        "projects":projects.len(),"terminal_sessions":terminals.len(),"schedules":schedules.len(),"agent_schedules":agent_schedules.len(),"teach":teach::status(),"permissions":permissions::status(),"computer_control":pointer::status(),"failures":failures
     }))
 }
 
