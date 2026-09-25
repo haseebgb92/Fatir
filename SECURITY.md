@@ -28,9 +28,16 @@ Whole-desktop actions prefer Linux AT-SPI semantic controls, then window-scoped 
 
 Substantial work is tracked through UNDERSTAND → PLAN → ACT → VERIFY → RECOVER/COMPLETE. Browser and desktop GUI mutations create a verification obligation; Fatir should inspect resulting state before reporting success. Repeated identical failures are loop-guarded and classified so recovery changes strategy rather than repeating blind actions. Persistent project, terminal, task, routine, schedule, and action-memory records are advisory operational state and never override approval/security rules.
 
-## Local schedules
+## Local schedules and Scheduled Agent/Web Tasks
 
-Fatir schedules are local shell commands stored under the Fatir data directory and launched with systemd user timers. They do not create an autonomous future model/browser session and do not grant browser or headless permission. Commands containing secrets should not be scheduled; stored credentials remain available only through the credential broker at explicitly approved execution time.
+Fatir has two deliberately separate scheduling systems.
+
+**Local schedules** are shell commands stored under the Fatir data directory and launched with systemd user timers. They do not create a future model/browser session and do not grant browser or headless permission.
+
+**Scheduled Agent/Web Tasks** may wake Fatir and run a model later. Creating one is always approval-gated, and the approval summary includes its browser mode and the number of stored credentials being authorized. Browser access is scoped to the saved mode (`none`, `managed`, `current`, or explicitly approved `headless`). Only individually selected credential IDs may be reused without a second credential prompt. Secret values remain in the credential broker and are never added to model context or chat history.
+
+Authenticated scheduled workflows must use the managed browser. Fatir intentionally does not inject stored credentials into the isolated headless browser. Authentication challenges such as OTP/authenticator codes, CAPTCHA, passkeys, or security keys must pause for human takeover; Fatir does not guess or bypass them.
+
 
 ## Fast Paths
 
