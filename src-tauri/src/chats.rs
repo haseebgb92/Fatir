@@ -89,7 +89,17 @@ pub fn touch(session_id: &str, user_text: &str) -> Result<()> {
 }
 
 fn message_text(message: &Value) -> Option<String> {
-    message.get("content").and_then(Value::as_str).map(str::to_string)
+    let raw = message.get("content").and_then(Value::as_str)?;
+    if raw.starts_with("FATIR SCHEDULED AGENT RUN") {
+        let task = raw
+            .split_once("\nTask:\n")
+            .map(|(_, rest)| rest)
+            .and_then(|rest| rest.split_once("\n\nRules for this scheduled run:").map(|(task, _)| task))
+            .unwrap_or(raw)
+            .trim();
+        return Some(task.to_string());
+    }
+    Some(raw.to_string())
 }
 
 fn visible_messages(messages: &[Value]) -> Vec<Value> {
