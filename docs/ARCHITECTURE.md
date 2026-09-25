@@ -60,3 +60,22 @@ Learned browser selectors are semantic rather than coordinate-based. Teach Mode 
 - headless browser execution requires explicit current-turn intent;
 - local desktop/system work cannot silently wake Chrome;
 - active-browser mode cannot silently switch to a different managed Chrome session.
+
+
+## Scheduled agents
+
+Fatir keeps deterministic local timers separate from model-driven work.
+
+- **Local schedules** run fixed shell/reminder commands through persistent systemd user timers.
+- **Agent schedules** wake Fatir later using `--run-agent-schedule <id>` and execute through the same SharedState/model/tool stack used by interactive Fatir.
+- If Fatir is already resident, Tauri's single-instance handler routes the scheduled invocation into the running process instead of opening another sidebar.
+- Each agent schedule owns a persistent `schedule-<id>` chat session, so its runs are inspectable from Desktop and Companion.
+- Browser mode is stored with the schedule: agent, managed browser, active browser, or explicitly authorized headless browser.
+- Stored-credential authorization is a per-schedule whitelist of credential IDs. Secret values remain inside Linux Secret Service and Rust execution.
+- Verification remains mandatory for browser/desktop mutations. MFA/CAPTCHA/security-key/phone-verification steps pause into human takeover.
+
+## Shared chat history
+
+The model session store remains the source of conversational context. A separate lightweight chat index records title, source and timestamps so Desktop and Companion can enumerate the same local conversations without exposing tool/system messages as user-facing history.
+
+Sources are tagged as desktop, companion or schedule. Companion reads the same history through Fatir's authenticated LAN/Tailscale API; there is no second cloud chat database.
