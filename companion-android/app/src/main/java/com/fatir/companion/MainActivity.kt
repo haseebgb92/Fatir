@@ -277,7 +277,7 @@ private fun FatirApp() {
                         scope.launch {
                             try {
                                 val response = api!!.approve(action.id)
-                                messages += UiMessage(false, response.text, response.model)
+                                messages += UiMessage(false, response.text, response.model, responseResources(response))
                                 pending = response.pending
                             } catch (t: Throwable) {
                                 messages += UiMessage(false, "Approval failed: " + t.message.orEmpty())
@@ -288,7 +288,7 @@ private fun FatirApp() {
                         scope.launch {
                             try {
                                 val response = api!!.deny(action.id)
-                                messages += UiMessage(false, response.text, response.model)
+                                messages += UiMessage(false, response.text, response.model, responseResources(response))
                                 pending = response.pending
                             } catch (t: Throwable) {
                                 messages += UiMessage(false, "Deny failed: " + t.message.orEmpty())
