@@ -269,7 +269,9 @@ async fn end_run(state: &SharedState, session_id: &str) {
 }
 
 pub async fn cancel_run(state: SharedState, session_id: &str) -> bool {
-    let token = state.runs.lock().await.get(session_id).cloned();
+    // Remove before cancellation. A timed-out caller can drop send_message before
+    // its normal end_run cleanup executes, so stale run entries must not survive.
+    let token = state.runs.lock().await.remove(session_id);
     let stopped = if let Some(token) = token { token.cancel(); true } else { false };
     tools::hide_all_virtual_pointers().await;
     stopped
