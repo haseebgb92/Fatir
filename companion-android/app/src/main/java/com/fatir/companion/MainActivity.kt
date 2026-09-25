@@ -9,6 +9,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -26,8 +27,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -329,9 +334,13 @@ private fun ConnectionScreen(
             Modifier.align(Alignment.Center).fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text("فاطر", fontFamily = FontFamily.Serif, fontSize = 48.sp, color = FatirGold, fontWeight = FontWeight.Bold)
-            Text("Fatir Companion", fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
-            Text("Connect to Fatir on your Linux PC", color = FatirMuted, modifier = Modifier.padding(top = 5.dp, bottom = 26.dp))
+            Image(
+                painter = painterResource(R.drawable.fatir_mark),
+                contentDescription = "Fatir",
+                modifier = Modifier.size(86.dp)
+            )
+            Text("Fatir Companion", fontSize = 24.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp))
+            Text("Your Linux assistant, wherever you are.", color = FatirMuted, modifier = Modifier.padding(top = 5.dp, bottom = 26.dp))
 
             Surface(
                 shape = RoundedCornerShape(24.dp),
@@ -343,8 +352,8 @@ private fun ConnectionScreen(
                     OutlinedTextField(
                         value = address,
                         onValueChange = onAddress,
-                        label = { Text("Linux IP") },
-                        placeholder = { Text("192.168.1.20:32145") },
+                        label = { Text("Fatir address") },
+                        placeholder = { Text("100.x.x.x:32145 or 192.168.x.x:32145") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -369,12 +378,12 @@ private fun ConnectionScreen(
                         else {
                             Icon(Icons.Outlined.Link, null)
                             Spacer(Modifier.width(8.dp))
-                            Text("Connect on local Wi-Fi")
+                            Text("Connect to Fatir")
                         }
                     }
                 }
             }
-            Text("Local MVP · trusted Wi-Fi only", color = FatirMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 18.dp))
+            Text("Works over your private LAN or Tailscale connection", color = FatirMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 18.dp))
         }
     }
 }
@@ -383,8 +392,12 @@ private fun ConnectionScreen(
 private fun Drawer(device: String, selected: Screen, onSelect: (Screen) -> Unit) {
     ModalDrawerSheet(drawerContainerColor = FatirSurface, modifier = Modifier.width(310.dp)) {
         Column(Modifier.padding(22.dp)) {
-            Text("فاطر", fontFamily = FontFamily.Serif, fontSize = 34.sp, color = FatirGold)
-            Text("Fatir", fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+            Image(
+                painter = painterResource(R.drawable.fatir_mark),
+                contentDescription = "Fatir",
+                modifier = Modifier.size(54.dp)
+            )
+            Text("Fatir", fontSize = 20.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp))
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp, bottom = 22.dp)) {
                 Box(Modifier.size(8.dp).background(FatirGreen, CircleShape))
                 Spacer(Modifier.width(8.dp))
@@ -417,28 +430,56 @@ private fun DrawerItem(label: String, icon: ImageVector, screen: Screen, selecte
 
 @Composable
 private fun TopFloatingBar(device: String, onMenu: () -> Unit, modifier: Modifier = Modifier) {
-    Row(
-        modifier.statusBarsPadding().fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .statusBarsPadding(),
+        color = FatirCream,
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp
     ) {
-        Surface(shape = CircleShape, color = FatirSurface, shadowElevation = 3.dp, border = BorderStroke(1.dp, FatirBorder)) {
-            IconButton(onClick = onMenu, modifier = Modifier.size(48.dp)) { Icon(Icons.Outlined.Menu, "Menu") }
-        }
-        Spacer(Modifier.width(12.dp))
-        Surface(
-            shape = RoundedCornerShape(18.dp),
-            color = FatirSurface.copy(alpha = .97f),
-            border = BorderStroke(1.dp, FatirBorder),
-            modifier = Modifier.weight(1f)
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .height(68.dp)
+                .padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("فاطر", fontFamily = FontFamily.Serif, color = FatirGold, fontSize = 22.sp)
-                Spacer(Modifier.width(9.dp))
-                Column(Modifier.weight(1f)) {
-                    Text("Fatir", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                    Text(device, color = FatirMuted, fontSize = 11.sp, maxLines = 1)
+            IconButton(onClick = onMenu, modifier = Modifier.size(44.dp)) {
+                Icon(Icons.Outlined.Menu, "Menu", tint = FatirInk)
+            }
+            Image(
+                painter = painterResource(R.drawable.fatir_mark),
+                contentDescription = "Fatir",
+                modifier = Modifier
+                    .padding(start = 4.dp)
+                    .size(42.dp)
+            )
+            Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                Text("Fatir", fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(7.dp).background(FatirGreen, CircleShape))
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        device,
+                        color = FatirMuted,
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
-                Box(Modifier.size(8.dp).background(FatirGreen, CircleShape))
+            }
+            Surface(
+                shape = RoundedCornerShape(999.dp),
+                color = Color(0xFFE8F3EC)
+            ) {
+                Text(
+                    "Connected",
+                    color = FatirGreen,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                )
             }
         }
     }
@@ -462,7 +503,7 @@ private fun ChatScreen(
 
     LazyColumn(
         state = state,
-        modifier = Modifier.fillMaxSize().padding(top = 82.dp, bottom = 112.dp),
+        modifier = Modifier.fillMaxSize().padding(top = 104.dp, bottom = 112.dp),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
@@ -504,7 +545,7 @@ private fun MessageBubble(message: UiMessage) {
             modifier = Modifier.widthIn(max = 330.dp)
         ) {
             Column(Modifier.padding(horizontal = 14.dp, vertical = 11.dp)) {
-                Text(message.text, lineHeight = 20.sp)
+                MarkdownText(message.text)
                 if (!message.model.isNullOrBlank()) {
                     Text(message.model!!, color = FatirMuted, fontSize = 10.sp, modifier = Modifier.padding(top = 6.dp))
                 }
@@ -603,7 +644,7 @@ private fun FilesScreen(
     onDownload: (FileEntry) -> Unit,
     onUpload: () -> Unit
 ) {
-    Column(Modifier.fillMaxSize().padding(top = 86.dp, bottom = 18.dp)) {
+    Column(Modifier.fillMaxSize().padding(top = 104.dp, bottom = 18.dp)) {
         Row(Modifier.padding(horizontal = 18.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             if (canGoBack) IconButton(onClick = onBack) { Icon(Icons.Outlined.ArrowBack, "Back") }
             Column(Modifier.weight(1f)) {
@@ -612,7 +653,28 @@ private fun FilesScreen(
             }
             FilledTonalIconButton(onClick = onUpload) { Icon(Icons.Outlined.UploadFile, "Upload from phone") }
         }
-        if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
+        if (loading && entries.isEmpty()) {
+            Column(
+                Modifier.fillMaxWidth().padding(top = 54.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 2.dp)
+                Text(
+                    "Loading Linux files…",
+                    color = FatirMuted,
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(top = 12.dp)
+                )
+                Text(
+                    "Remote folders can take a moment over Tailscale.",
+                    color = FatirMuted,
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(top = 3.dp)
+                )
+            }
+        } else if (loading) {
+            LinearProgressIndicator(Modifier.fillMaxWidth())
+        }
         if (!error.isNullOrBlank()) Text(error, color = FatirRed, modifier = Modifier.padding(18.dp))
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -651,7 +713,7 @@ private fun FilesScreen(
 
 @Composable
 private fun TransfersScreen(transfers: SnapshotStateList<TransferItem>) {
-    Column(Modifier.fillMaxSize().padding(top = 92.dp, start = 16.dp, end = 16.dp)) {
+    Column(Modifier.fillMaxSize().padding(top = 104.dp, start = 16.dp, end = 16.dp)) {
         Text("Transfers", fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
         Text("Phone ↔ Linux", color = FatirMuted, modifier = Modifier.padding(top = 3.dp, bottom = 14.dp))
         if (transfers.isEmpty()) InfoCard("No transfers yet", "Downloads from Linux and uploads from this phone will appear here.")
@@ -678,7 +740,7 @@ private fun TransfersScreen(transfers: SnapshotStateList<TransferItem>) {
 
 @Composable
 private fun SettingsScreen(health: HealthResponse, baseUrl: String, onDisconnect: () -> Unit) {
-    Column(Modifier.fillMaxSize().padding(top = 92.dp, start = 18.dp, end = 18.dp)) {
+    Column(Modifier.fillMaxSize().padding(top = 104.dp, start = 18.dp, end = 18.dp)) {
         Text("Settings", fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
         Surface(
             shape = RoundedCornerShape(20.dp),
@@ -704,7 +766,7 @@ private fun SettingsScreen(health: HealthResponse, baseUrl: String, onDisconnect
             modifier = Modifier.padding(top = 12.dp)
         ) {
             Text(
-                "Local MVP uses authenticated HTTP on your local Wi-Fi. Do not forward port 32145 or expose it to the internet.",
+                "Fatir is reachable through your private LAN or Tailscale network. Keep port 32145 private and do not forward it on your router.",
                 color = FatirMuted,
                 fontSize = 13.sp,
                 lineHeight = 18.sp,
@@ -733,6 +795,33 @@ private fun InfoCard(title: String, body: String) {
             Text(body, color = FatirMuted, modifier = Modifier.padding(top = 6.dp), lineHeight = 19.sp)
         }
     }
+}
+
+@Composable
+private fun MarkdownText(text: String) {
+    val annotated = remember(text) {
+        buildAnnotatedString {
+            var cursor = 0
+            while (cursor < text.length) {
+                val boldStart = text.indexOf("**", cursor)
+                if (boldStart < 0) {
+                    append(text.substring(cursor))
+                    break
+                }
+                if (boldStart > cursor) append(text.substring(cursor, boldStart))
+                val boldEnd = text.indexOf("**", boldStart + 2)
+                if (boldEnd < 0) {
+                    append(text.substring(boldStart))
+                    break
+                }
+                withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) {
+                    append(text.substring(boldStart + 2, boldEnd))
+                }
+                cursor = boldEnd + 2
+            }
+        }
+    }
+    Text(annotated, lineHeight = 20.sp)
 }
 
 private fun displayName(context: Context, uri: Uri): String? {
