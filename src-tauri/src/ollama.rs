@@ -243,7 +243,10 @@ async fn end_run(state: &SharedState, session_id: &str) {
 }
 
 pub async fn cancel_run(state: SharedState, session_id: &str) -> bool {
-    let token = state.runs.lock().await.get(session_id).cloned();
+    // Remove the run from the registry before cancelling it. If the caller itself
+    // times out and drops send_message, there is no future left to execute end_run.
+    // Removing here prevents a stale "still running" entry from surviving forever.
+    let token = state.runs.lock().await.remove(session_id);
     let stopped = if let Some(token) = token { token.cancel(); true } else { false };
     tools::hide_all_virtual_pointers().await;
     stopped
