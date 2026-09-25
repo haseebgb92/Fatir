@@ -1,4 +1,5 @@
 use crate::{
+    chats,
     credentials,
     models::AgentResponse,
     ollama::{self, SharedState},
@@ -405,6 +406,7 @@ pub async fn execute(state: SharedState, id: &str) -> Result<Value> {
         credential_ids: item.credential_ids.iter().cloned().collect(),
     };
     let prompt = build_prompt(&item);
+    let _ = chats::touch(&item.session_id, &format!("Scheduled: {}", item.label));
     let response = SCHEDULE_AUTH
         .scope(auth, ollama::send_message(state.clone(), &item.session_id, &prompt, Vec::new(), "auto"))
         .await;
