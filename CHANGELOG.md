@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.2.0 — Scheduled Agents, Shared Chats & Credential Login
+
+- Added persistent model/web schedules backed by systemd user timers without conflating them with local shell schedules.
+- Added explicit schedule execution modes for normal agent, managed browser, active browser and opt-in isolated headless browser work.
+- Added per-schedule stored-credential authorization: only selected credential IDs can be reused automatically and secret values remain in Linux Secret Service.
+- Added semantic browser credential filling by label/placeholder so stored passwords can be used without exposing them to the model.
+- Added Google sign-in guidance to reuse an authenticated browser session when appropriate.
+- Added mandatory human takeover for authenticator/TOTP, security keys, CAPTCHA, phone approval and unusual verification.
+- Added persistent shared chat indexing and history across Fatir Desktop, Companion and scheduled-agent sessions.
+- Added Companion chat-history and scheduled-agent API/screens over the existing authenticated LAN/Tailscale connection.
+- Moved the Companion connection token into Android Keystore-backed AES-GCM storage with migration from the previous preference value.
+- Scheduled runs persist last status/result/model and appear in the same local chat record; publishing workflows remain verification-gated.
+
+
 ## 1.1.1 — Full-height Command Center
 
 - Fixed Command Center rendering as a short bottom sheet on tall sidebar windows.
