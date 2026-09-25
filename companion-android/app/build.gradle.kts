@@ -13,8 +13,8 @@ android {
         applicationId = "com.fatir.companion"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.1.1-local"
+        versionCode = 3
+        versionName = "0.2.0-cloud"
     }
 
     buildFeatures {
