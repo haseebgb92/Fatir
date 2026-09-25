@@ -1,6 +1,6 @@
 use axum::{
     body::Body,
-    extract::{Query, State},
+    extract::{Path as AxumPath, Query, State},
     http::{header, HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -9,21 +9,22 @@ use axum::{
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::{
+    collections::HashMap,
     fs::{self, OpenOptions},
-    io::Write,
+    io::{SeekFrom, Write},
     net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
     path::{Path, PathBuf},
     sync::Arc,
-    time::UNIX_EPOCH,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use tokio::{fs::File, io::AsyncWriteExt, net::TcpListener};
+use tokio::{fs::File, io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt}, net::TcpListener, sync::RwLock};
 use tokio_util::io::ReaderStream;
 use uuid::Uuid;
 
 use crate::{
     agent_schedules,
     chat_history,
-    models::Attachment,
+    models::{AgentResponse, Attachment},
     ollama::{self, SharedState},
 };
 
@@ -47,6 +48,7 @@ pub struct CompanionService {
     token: Arc<String>,
     roots: Arc<Vec<PathBuf>>,
     upload_dir: Arc<PathBuf>,
+    runs: Arc<RwLock<HashMap<String, ChatRun>>>,
     info: CompanionInfo,
 }
 
@@ -58,8 +60,29 @@ struct HealthResponse {
     device_name: String,
 }
 
+const MAX_FOREGROUND_RUN_SECS: u64 = 15 * 60;
+
+#[derive(Debug, Clone, Serialize)]
+struct ChatRun {
+    request_id: String,
+    session_id: String,
+    status: String,
+    message: String,
+    updated_unix: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    response: Option<AgentResponse>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+}
+
+fn now_unix() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
+}
+
 #[derive(Debug, Deserialize)]
 struct ChatRequest {
+    #[serde(default)]
+    request_id: Option<String>,
     #[serde(default)]
     session_id: Option<String>,
     text: String,
@@ -161,6 +184,7 @@ impl CompanionService {
             token: Arc::new(token),
             roots: Arc::new(roots),
             upload_dir: Arc::new(upload_dir),
+            runs: Arc::new(RwLock::new(HashMap::new())),
             info,
         }
     }
@@ -173,6 +197,9 @@ impl CompanionService {
         let router = Router::new()
             .route("/api/v1/health", get(health))
             .route("/api/v1/chat", post(chat))
+            .route("/api/v1/chat/runs", post(start_chat_run))
+            .route("/api/v1/chat/runs/:request_id", get(chat_run))
+            .route("/api/v1/chat/runs/:request_id/cancel", post(cancel_chat_run))
             .route("/api/v1/approve", post(approve))
             .route("/api/v1/deny", post(deny))
             .route("/api/v1/files/roots", get(file_roots))
@@ -269,6 +296,154 @@ async fn chat(
         .into_response(),
         Err(e) => error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()),
     }
+}
+
+async fn start_chat_run(
+    State(state): State<CompanionService>,
+    headers: HeaderMap,
+    Json(request): Json<ChatRequest>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return response;
+    }
+    if request.text.trim().is_empty() {
+        return error(StatusCode::BAD_REQUEST, "Message cannot be empty");
+    }
+
+    let request_id = request
+        .request_id
+        .filter(|v| !v.trim().is_empty())
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
+
+    if let Some(existing) = state.runs.read().await.get(&request_id).cloned() {
+        return (StatusCode::OK, Json(existing)).into_response();
+    }
+
+    let mut attachments = Vec::new();
+    for raw in request.attachments {
+        match state.resolve_existing(&raw) {
+            Ok(path) if path.is_file() => attachments.push(Attachment {
+                path: path.display().to_string(),
+            }),
+            Ok(_) => return error(StatusCode::BAD_REQUEST, "Attachments must be files"),
+            Err(e) => return error(StatusCode::FORBIDDEN, &e),
+        }
+    }
+
+    let session_id = request
+        .session_id
+        .filter(|v| !v.trim().is_empty())
+        .unwrap_or_else(|| format!("companion-{}", Uuid::new_v4()));
+    let mode = request.mode.unwrap_or_else(|| "auto".into());
+    let text = request.text;
+
+    let initial = ChatRun {
+        request_id: request_id.clone(),
+        session_id: session_id.clone(),
+        status: "queued".into(),
+        message: "Request received".into(),
+        updated_unix: now_unix(),
+        response: None,
+        error: None,
+    };
+    state.runs.write().await.insert(request_id.clone(), initial.clone());
+
+    let task_state = state.clone();
+    let task_request_id = request_id.clone();
+    let task_session_id = session_id.clone();
+    tokio::spawn(async move {
+        {
+            let mut runs = task_state.runs.write().await;
+            if let Some(run) = runs.get_mut(&task_request_id) {
+                run.status = "running".into();
+                run.message = "Fatir is working".into();
+                run.updated_unix = now_unix();
+            }
+        }
+
+        let work = ollama::send_message(
+            task_state.shared.clone(),
+            &task_session_id,
+            &text,
+            attachments,
+            &mode,
+        );
+        let outcome = tokio::time::timeout(Duration::from_secs(MAX_FOREGROUND_RUN_SECS), work).await;
+        if outcome.is_err() {
+            let _ = ollama::cancel_run(task_state.shared.clone(), &task_session_id).await;
+        }
+
+        let mut runs = task_state.runs.write().await;
+        let Some(run) = runs.get_mut(&task_request_id) else { return; };
+        run.updated_unix = now_unix();
+        match outcome {
+            Ok(Ok(response)) => {
+                run.status = "completed".into();
+                run.message = "Complete".into();
+                run.response = Some(response);
+                run.error = None;
+            }
+            Ok(Err(err)) if err.to_string().contains("FATIR_STOPPED") => {
+                run.status = "cancelled".into();
+                run.message = "Stopped".into();
+                run.error = None;
+            }
+            Ok(Err(err)) => {
+                run.status = "error".into();
+                run.message = "Fatir hit a problem".into();
+                run.error = Some(err.to_string());
+            }
+            Err(_) => {
+                run.status = "timeout".into();
+                run.message = "This foreground task stopped after 15 minutes without completing".into();
+                run.error = Some("FATIR_TIMEOUT".into());
+            }
+        }
+    });
+
+    (StatusCode::ACCEPTED, Json(initial)).into_response()
+}
+
+async fn chat_run(
+    State(state): State<CompanionService>,
+    headers: HeaderMap,
+    AxumPath(request_id): AxumPath<String>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return response;
+    }
+    match state.runs.read().await.get(&request_id).cloned() {
+        Some(run) => Json(run).into_response(),
+        None => error(StatusCode::NOT_FOUND, "Unknown chat request"),
+    }
+}
+
+async fn cancel_chat_run(
+    State(state): State<CompanionService>,
+    headers: HeaderMap,
+    AxumPath(request_id): AxumPath<String>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return response;
+    }
+
+    let run = match state.runs.read().await.get(&request_id).cloned() {
+        Some(run) => run,
+        None => return error(StatusCode::NOT_FOUND, "Unknown chat request"),
+    };
+    if matches!(run.status.as_str(), "completed" | "error" | "cancelled" | "timeout") {
+        return Json(run).into_response();
+    }
+
+    let stopped = ollama::cancel_run(state.shared.clone(), &run.session_id).await;
+    let mut runs = state.runs.write().await;
+    if let Some(current) = runs.get_mut(&request_id) {
+        current.status = if stopped { "cancelling" } else { "cancelled" }.into();
+        current.message = if stopped { "Stopping…" } else { "Stopped" }.into();
+        current.updated_unix = now_unix();
+        return Json(current.clone()).into_response();
+    }
+    error(StatusCode::NOT_FOUND, "Unknown chat request")
 }
 
 async fn approve(
@@ -404,22 +579,53 @@ async fn download_file(
         Err(e) => return error(StatusCode::FORBIDDEN, &e),
     };
 
-    let file = match File::open(&path).await {
+    let metadata = match tokio::fs::metadata(&path).await {
+        Ok(metadata) => metadata,
+        Err(e) => return error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()),
+    };
+    let total_len = metadata.len();
+    let requested_range = headers
+        .get(header::RANGE)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| parse_byte_range(value, total_len));
+
+    let (start, end, partial) = match requested_range {
+        Some((start, end)) => (start, end, true),
+        None if total_len > 0 => (0, total_len - 1, false),
+        None => (0, 0, false),
+    };
+    let content_len = if total_len == 0 { 0 } else { end.saturating_sub(start) + 1 };
+
+    let mut file = match File::open(&path).await {
         Ok(file) => file,
         Err(e) => return error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()),
     };
-    let stream = ReaderStream::new(file);
+    if start > 0 {
+        if let Err(e) = file.seek(SeekFrom::Start(start)).await {
+            return error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string());
+        }
+    }
+    let stream = ReaderStream::new(file.take(content_len));
     let body = Body::from_stream(stream);
     let filename = path.file_name().and_then(|v| v.to_str()).unwrap_or("download");
     let mime = mime_guess::from_path(&path).first_or_octet_stream();
 
     let mut response = Response::new(body);
-    *response.status_mut() = StatusCode::OK;
+    *response.status_mut() = if partial { StatusCode::PARTIAL_CONTENT } else { StatusCode::OK };
     response.headers_mut().insert(
         header::CONTENT_TYPE,
         HeaderValue::from_str(mime.as_ref()).unwrap_or(HeaderValue::from_static("application/octet-stream")),
     );
-    if let Ok(value) = HeaderValue::from_str(&format!("attachment; filename=\"{}\"", sanitize_filename(filename))) {
+    response.headers_mut().insert(header::ACCEPT_RANGES, HeaderValue::from_static("bytes"));
+    if let Ok(value) = HeaderValue::from_str(&content_len.to_string()) {
+        response.headers_mut().insert(header::CONTENT_LENGTH, value);
+    }
+    if partial {
+        if let Ok(value) = HeaderValue::from_str(&format!("bytes {}-{}/{}", start, end, total_len)) {
+            response.headers_mut().insert(header::CONTENT_RANGE, value);
+        }
+    }
+    if let Ok(value) = HeaderValue::from_str(&format!("inline; filename=\"{}\"", sanitize_filename(filename))) {
         response.headers_mut().insert(header::CONTENT_DISPOSITION, value);
     }
     response
@@ -584,6 +790,26 @@ fn unique_destination(directory: &Path, filename: &str) -> PathBuf {
         }
     }
     directory.join(format!("{}-{}", Uuid::new_v4(), filename))
+}
+
+fn parse_byte_range(raw: &str, len: u64) -> Option<(u64, u64)> {
+    if len == 0 { return None; }
+    let spec = raw.trim().strip_prefix("bytes=")?.split(',').next()?.trim();
+    let (start_raw, end_raw) = spec.split_once('-')?;
+    if start_raw.is_empty() {
+        let suffix = end_raw.parse::<u64>().ok()?.min(len);
+        if suffix == 0 { return None; }
+        return Some((len - suffix, len - 1));
+    }
+    let start = start_raw.parse::<u64>().ok()?;
+    if start >= len { return None; }
+    let end = if end_raw.is_empty() {
+        len - 1
+    } else {
+        end_raw.parse::<u64>().ok()?.min(len - 1)
+    };
+    if end < start { return None; }
+    Some((start, end))
 }
 
 fn sanitize_filename(raw: &str) -> String {
