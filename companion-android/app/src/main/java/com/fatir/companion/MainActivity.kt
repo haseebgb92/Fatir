@@ -261,6 +261,7 @@ private fun FatirApp() {
         val attachedPaths = attachedFiles.map { it.path }
         val userResources = attachedFiles.map { ResourceRef(it.name, it.path, "file") }
         val requestId = UUID.randomUUID().toString()
+        val runStartedAt = System.currentTimeMillis()
 
         composer = ""
         messages += UiMessage(fromUser = true, text = text, attachments = userResources)
@@ -281,7 +282,13 @@ private fun FatirApp() {
                     )
                 ) { status ->
                     activeRequestId = status.request_id
-                    runStatus = status.message.ifBlank { status.status }
+                    val elapsed = ((System.currentTimeMillis() - runStartedAt) / 1000L).coerceAtLeast(0)
+                    runStatus = if (status.status == "running") {
+                        if (elapsed < 60) "Fatir is working · ${elapsed}s"
+                        else "Fatir is working · ${elapsed / 60}m ${elapsed % 60}s"
+                    } else {
+                        status.message.ifBlank { status.status }
+                    }
                 }
                 sessionId = result.session_id
                 messages += UiMessage(
