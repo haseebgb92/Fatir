@@ -594,6 +594,74 @@ function newChat(){
   messages.innerHTML=''; clearAttachments(); welcome.classList.remove('hidden');
   composer.value=''; autoSize(); composer.focus(); refreshDashboard();
 }
+async function loadChatSession(id,{closeSheet=true}={}){
+  if(busy) return;
+  try{
+    const history=await invoke('chat_history',{sessionId:id});
+    sessionId=id;
+    localStorage.setItem('fatir-session',sessionId);
+    messages.innerHTML='';
+    clearAttachments();
+    const rows=history.messages||[];
+    if(rows.length) welcome.classList.add('hidden'); else welcome.classList.remove('hidden');
+    for(const row of rows){
+      const text=row.content||'';
+      if(row.role==='user'){
+        const el=document.createElement('div'); el.className='message user';
+        el.innerHTML=`<div class="bubble">${formatText(text)}</div>`;
+        messages.appendChild(el); wireRichContent(el);
+      }else if(row.role==='assistant'){
+        const el=document.createElement('div'); el.className='message assistant';
+        el.innerHTML=`<div class="assistant-label">Fatir <span class="model-tag">History</span></div><div class="bubble">${formatText(text)}</div>`;
+        messages.appendChild(el); wireRichContent(el);
+      }
+    }
+    if(closeSheet) closeChats();
+    scrollBottom();
+    composer.focus();
+  }catch(e){
+    if(!String(e).toLowerCase().includes('chat not found')) addError(e);
+  }
+}
+
+async function restoreCurrentChat(){
+  await loadChatSession(sessionId,{closeSheet:false});
+}
+
+async function refreshChats(){
+  const holder=$('#chatHistoryList');
+  if(!holder) return;
+  holder.innerHTML='<div class="activity-empty">Loading chats…</div>';
+  try{
+    const chats=await invoke('chat_list');
+    if(!(chats||[]).length){
+      holder.innerHTML='<div class="activity-empty">No saved conversations yet.</div>';
+      return;
+    }
+    holder.innerHTML=chats.slice(0,80).map(chat=>`
+      <button type="button" class="chat-history-row" data-session="${escapeHtml(chat.session_id)}">
+        <span class="chat-history-icon">${chat.source==='schedule'?'⌚':chat.source==='companion'?'◫':'◇'}</span>
+        <span class="chat-history-copy">
+          <strong>${escapeHtml(chat.title||'Chat')}</strong>
+          <small>${escapeHtml(chat.preview||'')}${chat.message_count?` · ${chat.message_count} messages`:''}</small>
+        </span>
+        <span class="chat-history-source">${escapeHtml(chat.source||'desktop')}</span>
+      </button>`).join('');
+    holder.querySelectorAll('.chat-history-row').forEach(btn=>btn.addEventListener('click',()=>loadChatSession(btn.dataset.session)));
+  }catch(e){
+    holder.innerHTML=`<div class="activity-empty">Chat history unavailable: ${escapeHtml(String(e))}</div>`;
+  }
+}
+async function openChats(){
+  $('#chatsSheet')?.classList.remove('hidden');
+  $('#chatsSheet')?.setAttribute('aria-hidden','false');
+  await refreshChats();
+}
+function closeChats(){
+  $('#chatsSheet')?.classList.add('hidden');
+  $('#chatsSheet')?.setAttribute('aria-hidden','true');
+}
+
 async function refreshPin(){
   try{
     const s=await invoke('panel_state');
@@ -884,6 +952,11 @@ $('#testConnection').onclick=refreshStatus;
 $('#openData').onclick=()=>invoke('reveal_data_dir');
 
 
+$('#chatsBtn')?.addEventListener('click',openChats);
+$('#closeChats')?.addEventListener('click',closeChats);
+$('#refreshChats')?.addEventListener('click',refreshChats);
+$('#chatsSheet')?.addEventListener('click',e=>{if(e.target===$('#chatsSheet'))closeChats();});
+
 $('#opsBtn')?.addEventListener('click',openOps);
 $('#closeOps')?.addEventListener('click',closeOps);
 opsSheet?.addEventListener('click',e=>{if(e.target===opsSheet)closeOps();});
@@ -910,6 +983,7 @@ refreshDashboard();
 refreshRunBadge();
 refreshPin();
 refreshComputerControl();
+restoreCurrentChat();
 checkPendingShare();
 setInterval(checkPendingShare,1200);
 composer.focus();
