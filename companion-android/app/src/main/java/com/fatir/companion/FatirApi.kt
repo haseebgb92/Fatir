@@ -74,6 +74,22 @@ class FatirApi(
 
     suspend fun runAgentSchedule(id: String) = scheduleAction("/api/v1/agent-schedules/run", id)
 
+    suspend fun approveAgentSchedule(id: String): AgentResponse = withContext(Dispatchers.IO) {
+        val payload = json.encodeToString(IdRequest(id))
+        val request = authedRequest("$baseUrl/api/v1/agent-schedules/approve")
+            .post(payload.jsonBody())
+            .build()
+        executeJson(request)
+    }
+
+    suspend fun denyAgentSchedule(id: String): AgentResponse = withContext(Dispatchers.IO) {
+        val payload = json.encodeToString(IdRequest(id))
+        val request = authedRequest("$baseUrl/api/v1/agent-schedules/deny")
+            .post(payload.jsonBody())
+            .build()
+        executeJson(request)
+    }
+
     suspend fun cancelAgentSchedule(id: String) = scheduleAction("/api/v1/agent-schedules/cancel", id)
 
     suspend fun roots(): RootsResponse = withContext(Dispatchers.IO) {
