@@ -216,7 +216,7 @@ echo "[5/9] Validating Fatir v1.2.0 source…"
 cd "$ROOT"
 ./scripts/validate.sh
 
-echo "[6/9] Building Fatir v1.1.1…"
+echo "[6/9] Building Fatir v1.2.0…"
 echo "       Shared Cargo cache: $CARGO_TARGET_DIR"
 cargo metadata --manifest-path "$ROOT/src-tauri/Cargo.toml" --no-deps --format-version 1 >/dev/null
 cargo tauri build --bundles deb
@@ -317,7 +317,7 @@ fatir >/dev/null 2>&1 &
 
 echo
 echo "=========================================="
-echo " Fatir v1.1.1 is installed"
+echo " Fatir v1.2.0 is installed"
 echo "=========================================="
 echo
 printf '%s\n' \
