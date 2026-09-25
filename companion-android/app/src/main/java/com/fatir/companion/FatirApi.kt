@@ -3,6 +3,7 @@ package com.fatir.companion
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
@@ -28,6 +29,11 @@ class FatirApi(
     }
 
     private val client = OkHttpClient.Builder()
+        // Browser/desktop tasks can legitimately take well over OkHttp's
+        // 10-second default read timeout while Fatir is acting and verifying.
+        .connectTimeout(12, TimeUnit.SECONDS)
+        .readTimeout(10, TimeUnit.MINUTES)
+        .writeTimeout(10, TimeUnit.MINUTES)
         .retryOnConnectionFailure(true)
         .build()
 
