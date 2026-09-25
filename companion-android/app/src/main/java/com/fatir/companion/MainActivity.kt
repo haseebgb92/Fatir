@@ -12,6 +12,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -38,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import java.text.DecimalFormat
+import java.util.UUID
 
 private val FatirGold = Color(0xFFB48A3C)
 private val FatirGoldSoft = Color(0xFFF2E6C9)
@@ -49,7 +51,7 @@ private val FatirGreen = Color(0xFF2F8D5B)
 private val FatirRed = Color(0xFFB94A48)
 private val FatirBorder = Color(0xFFE8E1D3)
 
-private enum class Screen { CHAT, HISTORY, SCHEDULES, FILES, TRANSFERS, SETTINGS }
+private enum class Screen { CHAT, CHAT_FILES, HISTORY, SCHEDULES, FILES, TRANSFERS, SETTINGS }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
@@ -100,6 +102,9 @@ private fun FatirApp() {
     var pending by remember { mutableStateOf<PendingAction?>(null) }
     var composer by remember { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
+    var runStatus by remember { mutableStateOf<String?>(null) }
+    var activeRequestId by remember { mutableStateOf<String?>(null) }
+    var previewResource by remember { mutableStateOf<ResourceRef?>(null) }
     val linuxAttachments = remember { mutableStateListOf<FileEntry>() }
 
     var currentPath by remember { mutableStateOf<String?>(null) }
@@ -235,21 +240,52 @@ private fun FatirApp() {
     fun send() {
         val text = composer.trim()
         if (text.isBlank() || sending) return
+
+        val attachedFiles = linuxAttachments.toList()
+        val attachedPaths = attachedFiles.map { it.path }
+        val userResources = attachedFiles.map { ResourceRef(it.name, it.path, "file") }
+        val requestId = UUID.randomUUID().toString()
+
         composer = ""
-        messages += UiMessage(true, text)
-        val attached = linuxAttachments.map { it.path }
+        messages += UiMessage(fromUser = true, text = text, attachments = userResources)
         linuxAttachments.clear()
         sending = true
+        runStatus = "Request received"
+        activeRequestId = requestId
+
         scope.launch {
             try {
-                val result = api!!.chat(ChatRequest(sessionId, text, "auto", attached))
+                val result = api!!.chatResumable(
+                    ChatRequest(
+                        request_id = requestId,
+                        session_id = sessionId,
+                        text = text,
+                        mode = "auto",
+                        attachments = attachedPaths
+                    )
+                ) { status ->
+                    activeRequestId = status.request_id
+                    runStatus = status.message.ifBlank { status.status }
+                }
                 sessionId = result.session_id
-                messages += UiMessage(false, result.response.text, result.response.model)
+                messages += UiMessage(
+                    fromUser = false,
+                    text = result.response.text,
+                    model = result.response.model,
+                    attachments = responseResources(result.response)
+                )
                 pending = result.response.pending
             } catch (t: Throwable) {
-                messages += UiMessage(false, "Connection error: " + t.message.orEmpty())
+                val detail = t.message.orEmpty()
+                when {
+                    detail.contains("FATIR_STOPPED") -> messages += UiMessage(false, "Stopped.")
+                    detail.contains("FATIR_TIMEOUT") -> messages += UiMessage(false, "This foreground task stopped instead of remaining stuck. You can retry it.")
+                    else -> messages += UiMessage(false, "Unable to reconnect to Fatir: " + detail)
+                }
             } finally {
                 sending = false
+                runStatus = null
+                activeRequestId = null
             }
         }
     }
@@ -270,12 +306,12 @@ private fun FatirApp() {
         Box(Modifier.fillMaxSize().background(FatirCream)) {
             when (screen) {
                 Screen.CHAT -> ChatScreen(
-                    messages, pending, sending, linuxAttachments,
+                    messages, pending, sending, runStatus, linuxAttachments,
                     onApprove = { action ->
                         scope.launch {
                             try {
                                 val response = api!!.approve(action.id)
-                                messages += UiMessage(false, response.text, response.model)
+                                messages += UiMessage(false, response.text, response.model, responseResources(response))
                                 pending = response.pending
                             } catch (t: Throwable) {
                                 messages += UiMessage(false, "Approval failed: " + t.message.orEmpty())
@@ -286,14 +322,30 @@ private fun FatirApp() {
                         scope.launch {
                             try {
                                 val response = api!!.deny(action.id)
-                                messages += UiMessage(false, response.text, response.model)
+                                messages += UiMessage(false, response.text, response.model, responseResources(response))
                                 pending = response.pending
                             } catch (t: Throwable) {
                                 messages += UiMessage(false, "Deny failed: " + t.message.orEmpty())
                             }
                         }
                     },
-                    onRemoveAttachment = { linuxAttachments.remove(it) }
+                    onRemoveAttachment = { linuxAttachments.remove(it) },
+                    onView = { previewResource = it },
+                    onStop = {
+                        val requestId = activeRequestId
+                        if (requestId != null) {
+                            runStatus = "Stopping…"
+                            scope.launch {
+                                try { api!!.cancelChatRun(requestId) }
+                                catch (t: Throwable) { runStatus = "Stop request failed · " + t.message.orEmpty() }
+                            }
+                        }
+                    }
+                )
+
+                Screen.CHAT_FILES -> ChatFilesScreen(
+                    resources = messages.flatMap { it.attachments }.distinctBy { it.path },
+                    onView = { previewResource = it }
                 )
 
                 Screen.HISTORY -> HistoryScreen(
@@ -309,7 +361,8 @@ private fun FatirApp() {
                                     messages += UiMessage(
                                         fromUser = turn.role == "user",
                                         text = turn.text,
-                                        model = turn.model
+                                        model = turn.model,
+                                        attachments = turn.resources
                                     )
                                 }
                                 sessionId = chat.session_id
@@ -358,6 +411,7 @@ private fun FatirApp() {
                         pendingDownload = it
                         downloadPicker.launch(it.name)
                     },
+                    onView = { previewResource = ResourceRef(it.name, it.path, "file") },
                     onUpload = { uploadPicker.launch(arrayOf("*/*")) }
                 )
 
@@ -388,6 +442,10 @@ private fun FatirApp() {
                     onLinuxFiles = { screen = Screen.FILES },
                     modifier = Modifier.align(Alignment.BottomCenter)
                 )
+            }
+
+            previewResource?.let { resource ->
+                AttachmentViewerDialog(api = api!!, resource = resource) { previewResource = null }
             }
         }
     }
@@ -478,6 +536,7 @@ private fun Drawer(device: String, selected: Screen, onSelect: (Screen) -> Unit)
                 Text(device, color = FatirMuted, fontSize = 13.sp)
             }
             DrawerItem("Chat", Icons.Outlined.Chat, Screen.CHAT, selected, onSelect)
+            DrawerItem("Chat files", Icons.Outlined.Collections, Screen.CHAT_FILES, selected, onSelect)
             DrawerItem("Chats", Icons.Outlined.History, Screen.HISTORY, selected, onSelect)
             DrawerItem("Schedules", Icons.Outlined.Schedule, Screen.SCHEDULES, selected, onSelect)
             DrawerItem("Linux Files", Icons.Outlined.Folder, Screen.FILES, selected, onSelect)
@@ -566,13 +625,16 @@ private fun ChatScreen(
     messages: List<UiMessage>,
     pending: PendingAction?,
     sending: Boolean,
+    runStatus: String?,
     attachments: List<FileEntry>,
     onApprove: (PendingAction) -> Unit,
     onDeny: (PendingAction) -> Unit,
-    onRemoveAttachment: (FileEntry) -> Unit
+    onRemoveAttachment: (FileEntry) -> Unit,
+    onView: (ResourceRef) -> Unit,
+    onStop: () -> Unit
 ) {
     val state = rememberLazyListState()
-    LaunchedEffect(messages.size, pending, sending) {
+    LaunchedEffect(messages.size, pending, sending, runStatus) {
         val count = messages.size + (if (pending != null) 1 else 0)
         if (count > 0) state.animateScrollToItem(count - 1)
     }
@@ -586,13 +648,17 @@ private fun ChatScreen(
         if (messages.isEmpty()) item {
             InfoCard("Your Linux Fatir, from here.", "Ask Fatir to work on the PC, approve actions, attach Linux files, or send something from this phone.")
         }
-        items(messages) { MessageBubble(it) }
+        items(messages) { MessageBubble(it, onView) }
         if (pending != null) item { ApprovalCard(pending, onApprove, onDeny) }
         if (sending) item {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(12.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(12.dp).fillMaxWidth()
+            ) {
                 CircularProgressIndicator(Modifier.size(17.dp), strokeWidth = 2.dp)
                 Spacer(Modifier.width(10.dp))
-                Text("Fatir is working…", color = FatirMuted, fontSize = 13.sp)
+                Text(runStatus ?: "Fatir is working…", color = FatirMuted, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                TextButton(onClick = onStop) { Text("Stop") }
             }
         }
         if (attachments.isNotEmpty()) item {
@@ -612,20 +678,51 @@ private fun ChatScreen(
 }
 
 @Composable
-private fun MessageBubble(message: UiMessage) {
+private fun MessageBubble(message: UiMessage, onView: (ResourceRef) -> Unit) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (message.fromUser) Arrangement.End else Arrangement.Start) {
         Surface(
             shape = RoundedCornerShape(18.dp),
             color = if (message.fromUser) FatirGoldSoft else FatirSurface,
             border = if (message.fromUser) null else BorderStroke(1.dp, FatirBorder),
-            modifier = Modifier.widthIn(max = 330.dp)
+            modifier = Modifier.widthIn(max = 340.dp)
         ) {
             Column(Modifier.padding(horizontal = 14.dp, vertical = 11.dp)) {
                 MarkdownText(message.text)
+                message.attachments.forEach { resource ->
+                    AttachmentCard(resource = resource, onView = onView)
+                }
                 if (!message.model.isNullOrBlank()) {
                     Text(message.model!!, color = FatirMuted, fontSize = 10.sp, modifier = Modifier.padding(top = 6.dp))
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun AttachmentCard(resource: ResourceRef, onView: (ResourceRef) -> Unit) {
+    val icon = when (attachmentKind(resource)) {
+        AttachmentKind.IMAGE -> Icons.Outlined.Image
+        AttachmentKind.VIDEO -> Icons.Outlined.PlayCircle
+        AttachmentKind.AUDIO -> Icons.Outlined.AudioFile
+        AttachmentKind.PDF -> Icons.Outlined.PictureAsPdf
+        AttachmentKind.TEXT, AttachmentKind.DOCUMENT -> Icons.Outlined.Description
+        AttachmentKind.OTHER -> Icons.Outlined.InsertDriveFile
+    }
+    Surface(
+        onClick = { onView(resource) },
+        shape = RoundedCornerShape(13.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.fillMaxWidth().padding(top = 9.dp)
+    ) {
+        Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, null, tint = FatirGold)
+            Spacer(Modifier.width(9.dp))
+            Column(Modifier.weight(1f)) {
+                Text(resource.label.ifBlank { resource.path.substringAfterLast('/') }, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(attachmentCategoryLabel(resource), color = FatirMuted, fontSize = 10.sp)
+            }
+            Text("View", color = FatirGold, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
         }
     }
 }
@@ -707,6 +804,49 @@ private fun Composer(
     }
 }
 
+
+@Composable
+private fun ChatFilesScreen(resources: List<ResourceRef>, onView: (ResourceRef) -> Unit) {
+    var category by remember { mutableStateOf("All") }
+    val categories = listOf("All", "Images", "Videos", "Audio", "Documents", "Other")
+    val filtered = resources.filter { category == "All" || attachmentCategoryLabel(it) == category }
+
+    Column(Modifier.fillMaxSize().padding(top = 104.dp)) {
+        Text("Chat files", fontSize = 22.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp))
+        Text(
+            "Files attached to this conversation",
+            color = FatirMuted,
+            fontSize = 12.sp,
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 2.dp)
+        )
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp).horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(7.dp)
+        ) {
+            categories.forEach { item ->
+                FilterChip(
+                    selected = category == item,
+                    onClick = { category = item },
+                    label = { Text(item) }
+                )
+            }
+        }
+        if (filtered.isEmpty()) {
+            Box(Modifier.fillMaxSize()) {
+                Text("No $category files in this chat yet.", color = FatirMuted, modifier = Modifier.align(Alignment.Center))
+            }
+        } else {
+            LazyColumn(
+                contentPadding = PaddingValues(14.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(filtered, key = { it.path }) { resource ->
+                    AttachmentCard(resource, onView)
+                }
+            }
+        }
+    }
+}
 
 @Composable
 private fun HistoryScreen(
@@ -822,6 +962,7 @@ private fun FilesScreen(
     onOpen: (FileEntry) -> Unit,
     onAttach: (FileEntry) -> Unit,
     onDownload: (FileEntry) -> Unit,
+    onView: (FileEntry) -> Unit,
     onUpload: () -> Unit
 ) {
     Column(Modifier.fillMaxSize().padding(top = 104.dp, bottom = 18.dp)) {
@@ -881,6 +1022,7 @@ private fun FilesScreen(
                         }
                         if (entry.is_dir) Icon(Icons.Outlined.ChevronRight, null, tint = FatirMuted)
                         else {
+                            IconButton(onClick = { onView(entry) }) { Icon(Icons.Outlined.Visibility, "View") }
                             IconButton(onClick = { onAttach(entry) }) { Icon(Icons.Outlined.AttachFile, "Attach") }
                             IconButton(onClick = { onDownload(entry) }) { Icon(Icons.Outlined.Download, "Download") }
                         }
@@ -1003,6 +1145,12 @@ private fun MarkdownText(text: String) {
     }
     Text(annotated, lineHeight = 20.sp)
 }
+
+private fun responseResources(response: AgentResponse): List<ResourceRef> =
+    response.trace
+        .flatMap { it.resources }
+        .filter { it.kind != "folder" && !it.path.startsWith("http://") && !it.path.startsWith("https://") }
+        .distinctBy { it.path }
 
 private fun displayName(context: Context, uri: Uri): String? {
     var cursor: Cursor? = null
