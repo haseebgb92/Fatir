@@ -28,9 +28,17 @@ Whole-desktop actions prefer Linux AT-SPI semantic controls, then window-scoped 
 
 Substantial work is tracked through UNDERSTAND → PLAN → ACT → VERIFY → RECOVER/COMPLETE. Browser and desktop GUI mutations create a verification obligation; Fatir should inspect resulting state before reporting success. Repeated identical failures are loop-guarded and classified so recovery changes strategy rather than repeating blind actions. Persistent project, terminal, task, routine, schedule, and action-memory records are advisory operational state and never override approval/security rules.
 
-## Local schedules
+## Schedules
 
-Fatir schedules are local shell commands stored under the Fatir data directory and launched with systemd user timers. They do not create an autonomous future model/browser session and do not grant browser or headless permission. Commands containing secrets should not be scheduled; stored credentials remain available only through the credential broker at explicitly approved execution time.
+Fatir has two deliberately separate scheduling layers.
+
+**Local schedules** are deterministic shell commands/reminders stored under the Fatir data directory and launched with persistent systemd user timers. They never create a model/browser session and never grant browser or headless permission.
+
+**Agent schedules** are explicitly authorized future Fatir runs. Their schedule record stores the task prompt, browser execution mode, verification requirement, and only the IDs of credentials the user chose to authorize for that schedule. Credential values remain in Linux Secret Service and are retrieved only inside the Rust execution process. A scheduled run cannot expand that authorization to other credentials and does not bypass destructive, administrator, purchase, account/security, or unrelated sensitive approvals.
+
+Browser execution mode is fixed when the schedule is created: normal agent, visible managed browser, current/active browser only, or explicitly authorized isolated headless browser. Headless permission on one schedule does not grant headless access to other turns or schedules.
+
+Authenticator/TOTP codes, security keys, CAPTCHAs, phone approvals, recovery steps, and unusual login verification are human checkpoints. Fatir pauses browser automation and surfaces the blocker instead of guessing, storing, or sending those values through normal model/chat history.
 
 ## Fast Paths
 
