@@ -150,6 +150,15 @@ assert 'scheduled_job_create' in tools and 'scheduled_job_list' in tools and 'sc
 assert 'remind me' in tools and 'every day' in tools, 'Schedule intent must expose scheduled local job tools'
 schedules=(root/'src-tauri/src/schedules.rs').read_text()
 assert 'Persistent=true' in schedules and '.config/systemd/user' in schedules, 'V1 schedules must use persistent systemd user unit files rather than transient timers'
+agent_schedules=(root/'src-tauri/src/agent_schedules.rs').read_text()
+assert 'agent_schedule_create' in tools and 'agent_schedule_list' in tools and 'agent_schedule_cancel' in tools, 'Agent/web schedule tools missing'
+assert 'Persistent=true' in agent_schedules and 'browser_mode' in agent_schedules and 'credential_ids' in agent_schedules, 'Agent schedules must persist explicit browser and credential grants'
+assert 'with_execution_grant' in (root/'src-tauri/src/ollama.rs').read_text(), 'Scheduled credential execution grant missing'
+assert (root/'src-tauri/src/chat_history.rs').exists(), 'Shared chat history module missing'
+companion=(root/'src-tauri/src/companion.rs').read_text()
+assert '/api/v1/chats' in companion and '/api/v1/agent/schedules' in companion, 'Companion chat/schedule sync API missing'
+assert 'browser_fill_credential_by_label' in tools, 'Semantic credential broker browser fill missing'
+assert 'browser_takeover' in tools, 'Human authentication takeover support missing'
 assert 'enable\",\"--now' in schedules and 'daemon-reload' in schedules, 'Persistent schedules must reload and enable their user timer'
 assert 'persistent_across_reboot' in schedules, 'Schedule result must report persistent timer semantics'
 assert 'timer was rolled back' in schedules and 'disable","--now' in schedules, 'Schedule registry-save failures must roll back the enabled timer'
