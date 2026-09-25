@@ -368,25 +368,33 @@ private fun FatirApp() {
                         }
                     },
                     onApprovePending = { schedule ->
-                        val actionId = schedule.last_pending_action
-                        if (!actionId.isNullOrBlank()) {
-                            scope.launch {
-                                try {
-                                    val response = api!!.approve(actionId)
-                                    sessionId = schedule.session_id
-                                    messages.clear()
-                                    val saved = api!!.chatHistory(schedule.session_id)
-                                    saved.messages.forEach { msg ->
-                                        messages += UiMessage(msg.role == "user", msg.content, null)
-                                    }
-                                    messages += UiMessage(false, response.text, response.model)
-                                    pending = response.pending
-                                    scheduleRefresh++
-                                    chatRefresh++
-                                    screen = Screen.CHAT
-                                } catch (t: Throwable) {
-                                    scheduleError = t.message ?: "Unable to approve scheduled action"
+                        scope.launch {
+                            try {
+                                val response = api!!.approveAgentSchedule(schedule.id)
+                                sessionId = schedule.session_id
+                                messages.clear()
+                                val saved = api!!.chatHistory(schedule.session_id)
+                                saved.messages.forEach { msg ->
+                                    messages += UiMessage(msg.role == "user", msg.content, null)
                                 }
+                                messages += UiMessage(false, response.text, response.model)
+                                pending = response.pending
+                                scheduleRefresh++
+                                chatRefresh++
+                                screen = Screen.CHAT
+                            } catch (t: Throwable) {
+                                scheduleError = t.message ?: "Unable to approve scheduled action"
+                            }
+                        }
+                    },
+                    onDenyPending = { schedule ->
+                        scope.launch {
+                            try {
+                                api!!.denyAgentSchedule(schedule.id)
+                                scheduleRefresh++
+                                chatRefresh++
+                            } catch (t: Throwable) {
+                                scheduleError = t.message ?: "Unable to deny scheduled action"
                             }
                         }
                     },
@@ -911,6 +919,7 @@ private fun AgentSchedulesScreen(
     onOpenChat: (AgentScheduleItem) -> Unit,
     onRunNow: (AgentScheduleItem) -> Unit,
     onApprovePending: (AgentScheduleItem) -> Unit,
+    onDenyPending: (AgentScheduleItem) -> Unit,
     onCancel: (AgentScheduleItem) -> Unit
 ) {
     Column(Modifier.fillMaxSize().padding(top = 104.dp, start = 16.dp, end = 16.dp)) {
@@ -974,6 +983,7 @@ private fun AgentSchedulesScreen(
                                 TextButton(onClick = { onRunNow(item) }) { Text("Run now") }
                                 if (!item.last_pending_action.isNullOrBlank()) {
                                     Button(onClick = { onApprovePending(item) }) { Text("Approve") }
+                                    TextButton(onClick = { onDenyPending(item) }) { Text("Deny") }
                                 }
                                 TextButton(onClick = { onCancel(item) }) {
                                     Text("Cancel", color = FatirRed)
