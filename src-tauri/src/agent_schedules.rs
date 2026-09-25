@@ -190,6 +190,11 @@ pub fn create(
     }
     validate_execution_mode(execution_mode)?;
     validate_credentials(credential_ids)?;
+    if execution_mode == "headless_browser" && !credential_ids.is_empty() {
+        return Err(anyhow!(
+            "Stored credentials are intentionally disabled for headless scheduled browser runs. Use managed_browser for authenticated schedules so Fatir can inject broker secrets into the correct isolated visible browser profile."
+        ));
+    }
 
     let calendar = if trigger_kind == "delay" {
         let seconds = parse_delay_seconds(trigger)?;
@@ -312,6 +317,26 @@ pub fn run_now(id: &str) -> Result<Value> {
     Ok(json!({"queued":true,"id":item.id,"label":item.label}))
 }
 
+fn status_for_response(response: &AgentResponse) -> &'static str {
+    if response.pending.is_some() {
+        return "waiting_approval";
+    }
+    let lower = response.text.to_ascii_lowercase();
+    if lower.contains("browser control is paused")
+        || lower.contains("manual step")
+        || lower.contains("authenticator")
+        || lower.contains("verification code")
+        || lower.contains("security key")
+        || lower.contains("captcha")
+        || lower.contains("check your phone")
+        || lower.contains("approve sign-in")
+    {
+        "waiting_user"
+    } else {
+        "completed"
+    }
+}
+
 fn update_after_run(id: &str, status: &str, response: Option<&AgentResponse>, error: Option<&str>) -> Result<()> {
     let _guard = registry_lock().lock().map_err(|_| anyhow!("Schedule registry lock poisoned"))?;
     let mut items = load();
@@ -398,6 +423,41 @@ pub fn current_schedule_id() -> Option<String> {
     SCHEDULE_AUTH.try_with(|auth| auth.schedule_id.clone()).ok()
 }
 
+pub async fn approve_pending(state: SharedState, id: &str) -> Result<AgentResponse> {
+    let item = get(id)?;
+    let action_id = item
+        .last_pending_action
+        .clone()
+        .ok_or_else(|| anyhow!("This scheduled agent is not waiting for an approval"))?;
+    let auth = ScheduleAuthorization {
+        schedule_id: item.id.clone(),
+        credential_ids: item.credential_ids.iter().cloned().collect(),
+    };
+    let response = SCHEDULE_AUTH
+        .scope(auth, ollama::approve_action(state, &action_id, "auto"))
+        .await?;
+    let status = status_for_response(&response);
+    update_after_run(id, status, Some(&response), None)?;
+    Ok(response)
+}
+
+pub async fn deny_pending(state: SharedState, id: &str) -> Result<AgentResponse> {
+    let item = get(id)?;
+    let action_id = item
+        .last_pending_action
+        .clone()
+        .ok_or_else(|| anyhow!("This scheduled agent is not waiting for an approval"))?;
+    let auth = ScheduleAuthorization {
+        schedule_id: item.id.clone(),
+        credential_ids: item.credential_ids.iter().cloned().collect(),
+    };
+    let response = SCHEDULE_AUTH
+        .scope(auth, ollama::deny_action(state, &action_id, "auto"))
+        .await?;
+    update_after_run(id, "denied", Some(&response), None)?;
+    Ok(response)
+}
+
 pub async fn execute(state: SharedState, id: &str) -> Result<Value> {
     let item = get(id)?;
     update_after_run(id, "running", None, None)?;
@@ -413,19 +473,7 @@ pub async fn execute(state: SharedState, id: &str) -> Result<Value> {
 
     match response {
         Ok(response) => {
-            let lower = response.text.to_ascii_lowercase();
-            let status = if response.pending.is_some() {
-                "waiting_approval"
-            } else if lower.contains("browser control is paused")
-                || lower.contains("manual step")
-                || lower.contains("authenticator")
-                || lower.contains("captcha")
-                || lower.contains("security key")
-            {
-                "waiting_user"
-            } else {
-                "completed"
-            };
+            let status = status_for_response(&response);
             update_after_run(id, status, Some(&response), None)?;
             let summary = response.text.chars().take(240).collect::<String>();
             let _ = Command::new("notify-send")
