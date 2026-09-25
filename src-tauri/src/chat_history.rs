@@ -3,6 +3,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf};
 use uuid::Uuid;
+use crate::models::ResourceRef;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatTurn {
@@ -12,6 +13,8 @@ pub struct ChatTurn {
     pub text: String,
     #[serde(default)]
     pub model: Option<String>,
+    #[serde(default)]
+    pub resources: Vec<ResourceRef>,
     pub created_at: String,
 }
 
@@ -47,8 +50,18 @@ fn save(items: &[ChatTurn]) -> Result<()> {
 }
 
 pub fn append(session_id:&str, role:&str, text:&str, model:Option<&str>) -> Result<()> {
+    append_with_resources(session_id, role, text, model, &[])
+}
+
+pub fn append_with_resources(
+    session_id:&str,
+    role:&str,
+    text:&str,
+    model:Option<&str>,
+    resources:&[ResourceRef],
+) -> Result<()> {
     let text=text.trim();
-    if text.is_empty() { return Ok(()); }
+    if text.is_empty() && resources.is_empty() { return Ok(()); }
     let mut items=load();
     items.push(ChatTurn{
         id:Uuid::new_v4().to_string(),
@@ -56,6 +69,7 @@ pub fn append(session_id:&str, role:&str, text:&str, model:Option<&str>) -> Resu
         role:role.to_string(),
         text:text.chars().take(60_000).collect(),
         model:model.map(|s|s.to_string()),
+        resources:resources.iter().take(50).cloned().collect(),
         created_at:Utc::now().to_rfc3339(),
     });
     if items.len()>8000 {
