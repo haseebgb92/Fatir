@@ -395,7 +395,12 @@ pub fn summary_for(tool: &str, args: &Value) -> String {
         "run_shell_with_credentials" => format!("Run command with stored credentials: {}", shorten(args.get("command").and_then(Value::as_str).unwrap_or(""), 140)),
         "browser_fill_credential" => "Use a stored credential in the browser".into(),
         "browser_fill_credential_by_label" => format!("Use a stored credential in browser field {}", args.get("label").and_then(Value::as_str).unwrap_or("secret field")),
-        "agent_schedule_create" => format!("Create persistent agent schedule {}", args.get("label").and_then(Value::as_str).unwrap_or("schedule")),
+        "agent_schedule_create" => {
+            let label=args.get("label").and_then(Value::as_str).unwrap_or("schedule");
+            let mode=args.get("execution_mode").and_then(Value::as_str).unwrap_or("agent").replace('_'," ");
+            let credentials=args.get("credential_ids").and_then(Value::as_array).map(|x|x.len()).unwrap_or(0);
+            format!("Create persistent agent schedule {label} · {mode} · {credentials} stored credential(s) authorized")
+        },
         "agent_schedule_run_now" => format!("Run agent schedule {} now", args.get("id").and_then(Value::as_str).unwrap_or("")),
         "agent_schedule_cancel" => format!("Cancel agent schedule {}", args.get("id").and_then(Value::as_str).unwrap_or("")),
         "browser_upload_file" => {
