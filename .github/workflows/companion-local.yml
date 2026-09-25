@@ -59,3 +59,5 @@ jobs:
           name: fatir-companion-local-debug
           path: companion-android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+# build-stamp: latest-companion-ui
