@@ -2,7 +2,7 @@ name: Companion Local MVP
 
 on:
   push:
-    branches: [companion-local-mvp, companion-cloud-relay]
+    branches: [companion-local-mvp, companion-cloud-relay, companion-chat-media-v0.4]
     paths:
       - "src-tauri/**"
       - "companion-android/**"
