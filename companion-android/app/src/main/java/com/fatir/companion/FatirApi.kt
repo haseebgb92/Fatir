@@ -198,6 +198,9 @@ class FatirApi(
     fun remoteDesktopWebSocketUrl(): String =
         "$baseUrl/api/v1/remote/desktop/ws".toHttpUrl().toString()
 
+    fun remoteDesktopVideoUrl(): String =
+        "$baseUrl/api/v1/remote/desktop/video".toHttpUrl().toString()
+
     fun authorizationHeader(): String = "Bearer $token"
 
     suspend fun roots(): RootsResponse = withContext(Dispatchers.IO) {
