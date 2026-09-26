@@ -34,7 +34,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 url = "2"
 regex = "1"
 anyhow = "1"
-axum = "0.7"
+axum = { version = "0.7", features = ["ws"] }
 
 
 tokio-util = "0.7"
