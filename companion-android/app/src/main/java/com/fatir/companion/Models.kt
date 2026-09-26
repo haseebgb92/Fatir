@@ -13,6 +13,15 @@ data class HealthResponse(
 )
 
 @Serializable
+data class RemoteDesktopStatus(
+    val available: Boolean,
+    val running: Boolean,
+    val backend: String,
+    val display: String,
+    val message: String
+)
+
+@Serializable
 data class FileEntry(
     val name: String,
     val path: String,
