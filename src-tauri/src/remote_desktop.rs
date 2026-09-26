@@ -80,10 +80,14 @@ impl RemoteDesktopService {
             .arg("-nopw")
             .arg("-forever")
             .arg("-shared")
-            // Half-scale keeps the first raw RFB frame practical over Tailscale
-            // on high-resolution displays while x11vnc maps input back to the
-            // real desktop coordinates.
+            // Keep the transport light, but poll/send much more aggressively
+            // than x11vnc's 20ms + 20ms defaults. CopyRect/Hextile on the client
+            // then avoid paying raw-pixel bandwidth for most desktop activity.
             .arg("-scale").arg("0.5")
+            .arg("-wait").arg("8")
+            .arg("-defer").arg("5")
+            .arg("-extra_fbur").arg("2")
+            .arg("-nonap")
             .arg("-rfbport").arg(port.to_string())
             .arg("-quiet")
             .stdin(Stdio::null())
