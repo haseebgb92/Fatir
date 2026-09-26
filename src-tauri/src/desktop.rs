@@ -59,6 +59,7 @@ const LOCAL_RUNTIME_COMMANDS: &[(&str, &str)] = &[
     ("xprop", "window-class inspection"),
     ("gnome-screenshot", "primary screenshot capture"),
     ("scrot", "backup screenshot capture"),
+    ("x11vnc", "localhost-only Companion remote desktop backend"),
     ("gio", "desktop launching/trash/file integration"),
     ("xdg-open", "default application/file opener"),
     ("gsettings", "desktop accessibility settings"),
