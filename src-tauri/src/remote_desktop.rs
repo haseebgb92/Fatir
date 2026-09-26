@@ -117,6 +117,8 @@ impl RemoteDesktopService {
         let mut state = self.inner.lock().await;
         state.child = Some(child);
         state.port = Some(port);
+        drop(state);
+        notify("Companion remote session active");
         Ok(port)
     }
 
@@ -128,6 +130,8 @@ impl RemoteDesktopService {
         }
         state.child = None;
         state.port = None;
+        drop(state);
+        notify("Companion remote session ended");
         Ok(())
     }
 }
@@ -157,6 +161,13 @@ fn is_x11_session() -> bool {
 fn command_exists(name: &str) -> bool {
     let Some(path) = env::var_os("PATH") else { return false; };
     env::split_paths(&path).any(|dir| dir.join(name).is_file())
+}
+
+fn notify(message: &str) {
+    let _ = std::process::Command::new("notify-send")
+        .arg("Fatir Remote Desktop")
+        .arg(message)
+        .spawn();
 }
 
 fn reserve_loopback_port() -> Result<u16> {
