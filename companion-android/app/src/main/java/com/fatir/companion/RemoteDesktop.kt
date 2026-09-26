@@ -66,8 +66,11 @@ internal class RemoteDesktopClient(private val api: FatirApi) {
     var onFrame: ((Bitmap) -> Unit)? = null
     var onState: ((String) -> Unit)? = null
     var onError: ((String) -> Unit)? = null
+    var onFps: ((Int) -> Unit)? = null
 
     private var bitmap: Bitmap? = null
+    private var fpsWindowStarted = SystemClock.elapsedRealtime()
+    private var fpsFrames = 0
 
     fun start() {
         stopped = false
@@ -273,6 +276,22 @@ internal class RemoteDesktopClient(private val api: FatirApi) {
                     applyRawRectangle(x, y, width, height, raw)
                     changed = true
                 }
+                1 -> {
+                    val source = stream.readExactly(4)
+                    applyCopyRect(
+                        sourceX = u16(source, 0),
+                        sourceY = u16(source, 2),
+                        destX = x,
+                        destY = y,
+                        width = width,
+                        height = height
+                    )
+                    changed = true
+                }
+                5 -> {
+                    readHextileRectangle(stream, x, y, width, height)
+                    changed = true
+                }
                 -223 -> { // DesktopSize pseudo-encoding
                     framebufferWidth = width
                     framebufferHeight = height
@@ -283,7 +302,10 @@ internal class RemoteDesktopClient(private val api: FatirApi) {
             }
         }
 
-        if (changed) bitmap?.let { onFrame?.invoke(it) }
+        if (changed) {
+            bitmap?.let { onFrame?.invoke(it) }
+            recordFrame()
+        }
         requestFramebuffer(incremental = true)
     }
 
@@ -300,6 +322,124 @@ internal class RemoteDesktopClient(private val api: FatirApi) {
             src += 4
         }
         target.setPixels(pixels, 0, width, x, y, width, height)
+    }
+
+    private fun applyCopyRect(
+        sourceX: Int,
+        sourceY: Int,
+        destX: Int,
+        destY: Int,
+        width: Int,
+        height: Int
+    ) {
+        val target = bitmap ?: return
+        if (width <= 0 || height <= 0) return
+        if (sourceX < 0 || sourceY < 0 || destX < 0 || destY < 0) return
+        if (sourceX + width > target.width || sourceY + height > target.height) return
+        if (destX + width > target.width || destY + height > target.height) return
+        val pixels = IntArray(width * height)
+        target.getPixels(pixels, 0, width, sourceX, sourceY, width, height)
+        target.setPixels(pixels, 0, width, destX, destY, width, height)
+    }
+
+    private suspend fun readHextileRectangle(
+        stream: WsByteStream,
+        x: Int,
+        y: Int,
+        width: Int,
+        height: Int
+    ) {
+        val target = bitmap ?: return
+        var background = Color.BLACK
+        var foreground = Color.WHITE
+        var backgroundValid = false
+        var foregroundValid = false
+
+        var tileY = y
+        while (tileY < y + height) {
+            val tileHeight = min(16, y + height - tileY)
+            var tileX = x
+            while (tileX < x + width) {
+                val tileWidth = min(16, x + width - tileX)
+                val subencoding = stream.readU8()
+
+                if ((subencoding and 0x01) != 0) {
+                    val raw = stream.readExactly(tileWidth * tileHeight * 4)
+                    applyRawRectangle(tileX, tileY, tileWidth, tileHeight, raw)
+                    backgroundValid = false
+                    foregroundValid = false
+                    tileX += tileWidth
+                    continue
+                }
+
+                if ((subencoding and 0x02) != 0) {
+                    background = readPixel(stream)
+                    backgroundValid = true
+                }
+                if (!backgroundValid) error("Invalid Hextile background state")
+
+                if ((subencoding and 0x04) != 0) {
+                    foreground = readPixel(stream)
+                    foregroundValid = true
+                }
+
+                val pixels = IntArray(tileWidth * tileHeight) { background }
+
+                if ((subencoding and 0x08) != 0) {
+                    val subrects = stream.readU8()
+                    val coloured = (subencoding and 0x10) != 0
+
+                    repeat(subrects) {
+                        val color = if (coloured) {
+                            readPixel(stream)
+                        } else {
+                            if (!foregroundValid) error("Invalid Hextile foreground state")
+                            foreground
+                        }
+
+                        val xy = stream.readU8()
+                        val wh = stream.readU8()
+                        val sx = (xy ushr 4) and 0x0f
+                        val sy = xy and 0x0f
+                        val sw = ((wh ushr 4) and 0x0f) + 1
+                        val sh = (wh and 0x0f) + 1
+
+                        val maxX = min(tileWidth, sx + sw)
+                        val maxY = min(tileHeight, sy + sh)
+                        for (py in sy until maxY) {
+                            val row = py * tileWidth
+                            for (px in sx until maxX) {
+                                pixels[row + px] = color
+                            }
+                        }
+                    }
+                }
+
+                target.setPixels(pixels, 0, tileWidth, tileX, tileY, tileWidth, tileHeight)
+                tileX += tileWidth
+            }
+            tileY += tileHeight
+        }
+    }
+
+    private suspend fun readPixel(stream: WsByteStream): Int {
+        val pixel = stream.readExactly(4)
+        val b = pixel[0].toInt() and 0xff
+        val g = pixel[1].toInt() and 0xff
+        val r = pixel[2].toInt() and 0xff
+        return (0xff shl 24) or (r shl 16) or (g shl 8) or b
+    }
+
+    private fun recordFrame() {
+        fpsFrames++
+        val now = SystemClock.elapsedRealtime()
+        val elapsed = now - fpsWindowStarted
+        if (elapsed >= 1_000L) {
+            val fps = ((fpsFrames * 1_000L) / elapsed).toInt()
+            fpsFrames = 0
+            fpsWindowStarted = now
+            onFps?.invoke(fps)
+        }
     }
 
     private fun createBitmap(width: Int, height: Int) {
@@ -327,11 +467,18 @@ internal class RemoteDesktopClient(private val api: FatirApi) {
     }
 
     private fun sendEncodings() {
-        val msg = ByteArray(12)
+        val encodings = intArrayOf(
+            1,     // CopyRect: excellent for scrolling/window movement
+            5,     // Hextile: compact desktop updates without zlib overhead
+            0,     // Raw fallback
+            -223   // DesktopSize
+        )
+        val msg = ByteArray(4 + encodings.size * 4)
         msg[0] = 2
-        putU16(msg, 2, 2)
-        putI32(msg, 4, 0) // Raw
-        putI32(msg, 8, -223) // DesktopSize
+        putU16(msg, 2, encodings.size)
+        encodings.forEachIndexed { index, encoding ->
+            putI32(msg, 4 + index * 4, encoding)
+        }
         sendRaw(msg)
     }
 
@@ -693,6 +840,7 @@ internal fun RemoteDesktopScreen(
     val client = remember(api) { RemoteDesktopClient(api) }
 
     var status by remember { mutableStateOf("Starting…") }
+    var fps by remember { mutableIntStateOf(0) }
     var error by remember { mutableStateOf<String?>(null) }
     var dragLock by remember { mutableStateOf(false) }
     var keyboardOpen by remember { mutableStateOf(false) }
@@ -708,6 +856,7 @@ internal fun RemoteDesktopScreen(
             }
         }
         client.onError = { value -> android.os.Handler(android.os.Looper.getMainLooper()).post { error = value } }
+        client.onFps = { value -> android.os.Handler(android.os.Looper.getMainLooper()).post { fps = value } }
         onDispose {
             client.stop()
             scope.launch(Dispatchers.IO) { runCatching { api.stopRemoteDesktop() } }
@@ -756,7 +905,9 @@ internal fun RemoteDesktopScreen(
                 Column(Modifier.weight(1f)) {
                     Text("Remote Desktop", color = ComposeColor.White, fontSize = 14.sp)
                     Text(
-                        if (error.isNullOrBlank()) status else error!!,
+                        if (error.isNullOrBlank()) {
+                            if (status == "Connected" && fps > 0) "Connected · $fps fps" else status
+                        } else error!!,
                         color = if (error.isNullOrBlank()) ComposeColor(0xFFBDBDBD) else ComposeColor(0xFFFFA7A7),
                         fontSize = 10.sp,
                         maxLines = 2
