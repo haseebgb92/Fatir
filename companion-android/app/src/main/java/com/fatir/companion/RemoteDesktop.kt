@@ -670,7 +670,12 @@ internal fun RemoteDesktopScreen(
     var serverReady by remember { mutableStateOf(false) }
 
     DisposableEffect(client) {
-        client.onState = { value -> android.os.Handler(android.os.Looper.getMainLooper()).post { status = value } }
+        client.onState = { value ->
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                status = value
+                if (value == "Connected") error = null
+            }
+        }
         client.onError = { value -> android.os.Handler(android.os.Looper.getMainLooper()).post { error = value } }
         onDispose {
             client.stop()
