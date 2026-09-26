@@ -84,6 +84,8 @@ internal class RemoteDesktopClient(private val api: FatirApi) {
         }
     }
 
+    fun currentFrame(): Bitmap? = bitmap
+
     fun stop() {
         stopped = true
         socket?.close(1000, "Remote desktop closed")
@@ -464,6 +466,7 @@ internal class RemoteDesktopSurface(
     private var moved = false
     private var multiTouch = false
     private var lastTapAt = 0L
+    private var pendingSingleTap: Runnable? = null
     private var lastTwoFingerY = 0f
     private var lastTwoFingerSpan = 0f
     private var twoFingerStartAt = 0L
@@ -473,6 +476,7 @@ internal class RemoteDesktopSurface(
         isFocusable = true
         isFocusableInTouchMode = true
         setBackgroundColor(Color.BLACK)
+        bitmap = client.currentFrame()
         client.onFrame = { frame ->
             post {
                 bitmap = frame
@@ -545,15 +549,28 @@ internal class RemoteDesktopSurface(
                     client.releasePointer(point.first, point.second)
                 } else if (!moved) {
                     val now = SystemClock.uptimeMillis()
-                    if (now - lastTapAt < 320) {
-                        client.doubleClick(point.first, point.second)
-                        lastTapAt = 0
-                    } else if (now - downAt > 650) {
+                    if (now - downAt > 650) {
+                        pendingSingleTap?.let { removeCallbacks(it) }
+                        pendingSingleTap = null
                         client.rightClick(point.first, point.second)
                         lastTapAt = 0
+                    } else if (now - lastTapAt < 320) {
+                        pendingSingleTap?.let { removeCallbacks(it) }
+                        pendingSingleTap = null
+                        client.doubleClick(point.first, point.second)
+                        lastTapAt = 0
                     } else {
-                        client.click(point.first, point.second)
                         lastTapAt = now
+                        val tapAt = now
+                        val click = Runnable {
+                            if (lastTapAt == tapAt) {
+                                client.click(point.first, point.second)
+                                lastTapAt = 0
+                            }
+                            pendingSingleTap = null
+                        }
+                        pendingSingleTap = click
+                        postDelayed(click, 320)
                     }
                 }
             }
