@@ -229,6 +229,12 @@ internal class RemoteDesktopClient(private val api: FatirApi) {
         while (!stopped) {
             when (stream.readU8()) {
                 0 -> readFramebufferUpdate(stream)
+                1 -> { // SetColorMapEntries; not used by our true-color format.
+                    stream.readU8()
+                    stream.readU16()
+                    val colors = stream.readU16().coerceAtMost(65_536)
+                    stream.readExactly(colors * 6)
+                }
                 2 -> Unit // bell
                 3 -> {
                     stream.readExactly(3)
