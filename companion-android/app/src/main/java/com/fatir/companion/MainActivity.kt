@@ -52,7 +52,7 @@ private val FatirGreen = Color(0xFF2F8D5B)
 private val FatirRed = Color(0xFFB94A48)
 private val FatirBorder = Color(0xFFE8E1D3)
 
-private enum class Screen { CHAT, CHAT_FILES, HISTORY, SCHEDULES, FILES, TRANSFERS, SETTINGS }
+private enum class Screen { CHAT, REMOTE_DESKTOP, CHAT_FILES, HISTORY, SCHEDULES, FILES, TRANSFERS, SETTINGS }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
@@ -366,6 +366,11 @@ private fun FatirApp() {
                     }
                 )
 
+                Screen.REMOTE_DESKTOP -> RemoteDesktopScreen(
+                    api = api!!,
+                    onExit = { screen = Screen.CHAT }
+                )
+
                 Screen.CHAT_FILES -> ChatFilesScreen(
                     resources = messages.flatMap { it.attachments }.distinctBy { it.path },
                     onView = { previewResource = it }
@@ -452,11 +457,13 @@ private fun FatirApp() {
                 )
             }
 
-            TopFloatingBar(
-                device = health!!.device_name,
-                onMenu = { scope.launch { drawer.open() } },
-                modifier = Modifier.align(Alignment.TopCenter)
-            )
+            if (screen != Screen.REMOTE_DESKTOP) {
+                TopFloatingBar(
+                    device = health!!.device_name,
+                    onMenu = { scope.launch { drawer.open() } },
+                    modifier = Modifier.align(Alignment.TopCenter)
+                )
+            }
 
             if (screen == Screen.CHAT) {
                 Composer(
@@ -562,6 +569,7 @@ private fun Drawer(device: String, selected: Screen, onSelect: (Screen) -> Unit)
                 Text(device, color = FatirMuted, fontSize = 13.sp)
             }
             DrawerItem("Chat", Icons.Outlined.Chat, Screen.CHAT, selected, onSelect)
+            DrawerItem("Remote Desktop", Icons.Outlined.DesktopWindows, Screen.REMOTE_DESKTOP, selected, onSelect)
             DrawerItem("Chat files", Icons.Outlined.Collections, Screen.CHAT_FILES, selected, onSelect)
             DrawerItem("Chats", Icons.Outlined.History, Screen.HISTORY, selected, onSelect)
             DrawerItem("Schedules", Icons.Outlined.Schedule, Screen.SCHEDULES, selected, onSelect)
