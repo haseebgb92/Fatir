@@ -80,6 +80,10 @@ impl RemoteDesktopService {
             .arg("-nopw")
             .arg("-forever")
             .arg("-shared")
+            // The local monitor is 2560×1440 on the primary Fatir machine.
+            // Half-scale keeps the first raw RFB frame practical over Tailscale
+            // while x11vnc maps input back to the real desktop coordinates.
+            .arg("-scale").arg("0.5")
             .arg("-rfbport").arg(port.to_string())
             .arg("-quiet")
             .stdin(Stdio::null())
