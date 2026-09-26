@@ -217,6 +217,7 @@ impl CompanionService {
             .route("/api/v1/remote/desktop/start", post(remote_desktop_start))
             .route("/api/v1/remote/desktop/stop", post(remote_desktop_stop))
             .route("/api/v1/remote/desktop/ws", get(remote_desktop_ws))
+            .route("/api/v1/remote/desktop/video", get(remote_desktop_video))
             .with_state(self);
 
         let listener = TcpListener::bind(("0.0.0.0", COMPANION_PORT)).await?;
@@ -791,6 +792,32 @@ async fn remote_desktop_ws(
         Err(err) => error(StatusCode::SERVICE_UNAVAILABLE, &err.to_string()),
     }
 }
+async fn remote_desktop_video(
+    State(state): State<CompanionService>,
+    headers: HeaderMap,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) { return response; }
+
+    match state.remote_desktop.spawn_video_stream().await {
+        Ok(stdout) => {
+            let stream = ReaderStream::new(stdout);
+            let body = Body::from_stream(stream);
+            let mut response = Response::new(body);
+            *response.status_mut() = StatusCode::OK;
+            response.headers_mut().insert(
+                header::CONTENT_TYPE,
+                HeaderValue::from_static("video/mp2t"),
+            );
+            response.headers_mut().insert(
+                header::CACHE_CONTROL,
+                HeaderValue::from_static("no-store, no-cache, must-revalidate"),
+            );
+            response
+        }
+        Err(err) => error(StatusCode::SERVICE_UNAVAILABLE, &err.to_string()),
+    }
+}
+
 
 async fn proxy_remote_desktop(socket: WebSocket, port: u16) {
     let Ok(stream) = TcpStream::connect(("127.0.0.1", port)).await else { return; };
