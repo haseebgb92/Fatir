@@ -195,11 +195,8 @@ class FatirApi(
         )
     }
 
-    fun remoteDesktopWebSocketUrl(): String {
-        val http = "$baseUrl/api/v1/remote/desktop/ws".toHttpUrl()
-        val scheme = if (http.isHttps) "wss" else "ws"
-        return http.newBuilder().scheme(scheme).build().toString()
-    }
+    fun remoteDesktopWebSocketUrl(): String =
+        "$baseUrl/api/v1/remote/desktop/ws".toHttpUrl().toString()
 
     fun authorizationHeader(): String = "Bearer $token"
 
