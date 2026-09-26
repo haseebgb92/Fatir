@@ -38,6 +38,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.text.DecimalFormat
 import java.util.UUID
@@ -368,7 +369,10 @@ private fun FatirApp() {
 
                 Screen.REMOTE_DESKTOP -> RemoteDesktopScreen(
                     api = api!!,
-                    onExit = { screen = Screen.CHAT }
+                    onExit = {
+                        screen = Screen.CHAT
+                        scope.launch(Dispatchers.IO) { runCatching { api!!.stopRemoteDesktop() } }
+                    }
                 )
 
                 Screen.CHAT_FILES -> ChatFilesScreen(
