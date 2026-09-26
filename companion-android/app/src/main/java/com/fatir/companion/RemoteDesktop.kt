@@ -422,7 +422,8 @@ private class WsByteStream {
         var written = 0
         while (written < count) {
             if (offset >= current.size) {
-                current = channel.receiveCatching().getOrElse { throw EOFException("Remote desktop stream closed") }
+                current = channel.receiveCatching().getOrNull()
+                    ?: throw EOFException("Remote desktop stream closed")
                 offset = 0
             }
             val take = min(count - written, current.size - offset)
