@@ -28,6 +28,7 @@ mod schedules;
 mod chat_history;
 mod agent_schedules;
 mod companion;
+mod remote_desktop;
 
 use models::{AgentResponse, Attachment, SystemSnapshot};
 use ollama::SharedState;
