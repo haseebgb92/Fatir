@@ -45,7 +45,7 @@ DEPS=(
   # Local desktop control + app discovery
   at-spi2-core python3 python3-gi python3-cairo python3-pyatspi
   gir1.2-atspi-2.0 gir1.2-gtk-3.0 libatk-wrapper-java libatk-wrapper-java-jni
-  xdotool wmctrl xclip x11-utils xauth gnome-screenshot scrot
+  xdotool wmctrl xclip x11-utils xauth gnome-screenshot scrot x11vnc
   xdg-utils desktop-file-utils libglib2.0-bin libgtk-3-bin
   dbus-x11 libnotify-bin policykit-1
 
