@@ -60,6 +60,7 @@ const LOCAL_RUNTIME_COMMANDS: &[(&str, &str)] = &[
     ("gnome-screenshot", "primary screenshot capture"),
     ("scrot", "backup screenshot capture"),
     ("x11vnc", "localhost-only Companion remote desktop backend"),
+    ("ffmpeg", "H.264 Companion remote desktop video encoder"),
     ("gio", "desktop launching/trash/file integration"),
     ("xdg-open", "default application/file opener"),
     ("gsettings", "desktop accessibility settings"),
