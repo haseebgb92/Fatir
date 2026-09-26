@@ -29,6 +29,9 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import java.io.EOFException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -671,8 +674,16 @@ internal fun RemoteDesktopScreen(
 
     DisposableEffect(activity) {
         val previous = activity?.requestedOrientation
+        val window = activity?.window
+        val controller = if (window != null) WindowCompat.getInsetsController(window, window.decorView) else null
+
         activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        controller?.systemBarsBehavior =
+            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        controller?.hide(WindowInsetsCompat.Type.systemBars())
+
         onDispose {
+            controller?.show(WindowInsetsCompat.Type.systemBars())
             if (activity != null) {
                 activity.requestedOrientation = previous ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             }
