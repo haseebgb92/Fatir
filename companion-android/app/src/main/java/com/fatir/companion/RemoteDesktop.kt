@@ -3,14 +3,12 @@ package com.fatir.companion
 import android.app.Activity
 import android.content.Context
 import android.content.pm.ActivityInfo
-import android.graphics.Bitmap
-import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.Paint
 import android.graphics.RectF
 import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.View
+import android.widget.FrameLayout
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.BasicTextField
@@ -32,9 +30,16 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
+import androidx.media3.common.Player
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.PlayerView
 import java.io.EOFException
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 import kotlin.math.hypot
@@ -45,6 +50,11 @@ import okhttp3.*
 import okio.ByteString
 import okio.ByteString.Companion.toByteString
 
+/**
+ * RFB is intentionally used only as a very small input/control channel.
+ * Screen pixels are delivered separately as H.264/MPEG-TS and decoded by
+ * Android's Media3/MediaCodec path.
+ */
 internal class RemoteDesktopClient(private val api: FatirApi) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val http = OkHttpClient.Builder()
@@ -56,6 +66,7 @@ internal class RemoteDesktopClient(private val api: FatirApi) {
 
     @Volatile private var stopped = false
     @Volatile private var socket: WebSocket? = null
+
     @Volatile var framebufferWidth: Int = 0
         private set
     @Volatile var framebufferHeight: Int = 0
@@ -63,14 +74,8 @@ internal class RemoteDesktopClient(private val api: FatirApi) {
     @Volatile var desktopName: String = "Linux desktop"
         private set
 
-    var onFrame: ((Bitmap) -> Unit)? = null
     var onState: ((String) -> Unit)? = null
     var onError: ((String) -> Unit)? = null
-    var onFps: ((Int) -> Unit)? = null
-
-    private var bitmap: Bitmap? = null
-    private var fpsWindowStarted = SystemClock.elapsedRealtime()
-    private var fpsFrames = 0
 
     fun start() {
         stopped = false
@@ -78,22 +83,20 @@ internal class RemoteDesktopClient(private val api: FatirApi) {
             var attempt = 0
             while (!stopped) {
                 try {
-                    onState?.invoke(if (attempt == 0) "Connecting…" else "Reconnecting…")
+                    onState?.invoke(if (attempt == 0) "Connecting controls…" else "Reconnecting controls…")
                     runSession()
-                    if (!stopped) throw EOFException("Remote desktop connection closed")
+                    if (!stopped) throw EOFException("Remote desktop control connection closed")
                 } catch (t: Throwable) {
                     if (stopped) break
                     attempt++
-                    onError?.invoke(t.message ?: "Remote desktop connection interrupted")
-                    onState?.invoke("Reconnecting…")
+                    onError?.invoke(t.message ?: "Remote desktop controls were interrupted")
+                    onState?.invoke("Reconnecting controls…")
                     delay(backoff(attempt))
                 }
             }
             onState?.invoke("Disconnected")
         }
     }
-
-    fun currentFrame(): Bitmap? = bitmap
 
     fun stop() {
         stopped = true
@@ -152,7 +155,6 @@ internal class RemoteDesktopClient(private val api: FatirApi) {
     private suspend fun runSession() {
         val stream = WsByteStream()
         val opened = CompletableDeferred<WebSocket>()
-        val closed = CompletableDeferred<Unit>()
 
         val request = Request.Builder()
             .url(api.remoteDesktopWebSocketUrl())
@@ -171,12 +173,10 @@ internal class RemoteDesktopClient(private val api: FatirApi) {
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 stream.close(t)
                 if (!opened.isCompleted) opened.completeExceptionally(t)
-                if (!closed.isCompleted) closed.complete(Unit)
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 stream.close()
-                if (!closed.isCompleted) closed.complete(Unit)
             }
         })
         socket = ws
@@ -186,12 +186,31 @@ internal class RemoteDesktopClient(private val api: FatirApi) {
         onState?.invoke("Connected")
 
         try {
-            serverLoop(stream)
+            // With no FramebufferUpdateRequest x11vnc sends no desktop pixels.
+            // We only consume asynchronous bell/clipboard messages while input
+            // events travel in the opposite direction.
+            while (!stopped) {
+                when (stream.readU8()) {
+                    1 -> {
+                        stream.readU8()
+                        stream.readU16()
+                        val colors = stream.readU16().coerceAtMost(65_536)
+                        stream.readExactly(colors * 6)
+                    }
+                    2 -> Unit
+                    3 -> {
+                        stream.readExactly(3)
+                        val length = stream.readU32().toInt().coerceAtMost(4 * 1024 * 1024)
+                        stream.readExactly(length)
+                    }
+                    0 -> error("Unexpected framebuffer data on control-only channel")
+                    else -> error("Unsupported remote desktop control message")
+                }
+            }
         } finally {
             ws.close(1000, "session end")
             socket = null
             stream.close()
-            if (!closed.isCompleted) closed.complete(Unit)
         }
     }
 
@@ -227,279 +246,13 @@ internal class RemoteDesktopClient(private val api: FatirApi) {
         framebufferHeight = u16(init, 2)
         val nameLength = u32(init, 20).toInt().coerceAtMost(65_536)
         desktopName = stream.readExactly(nameLength).toString(Charsets.UTF_8)
-        createBitmap(framebufferWidth, framebufferHeight)
-
-        sendPixelFormat()
-        sendEncodings()
-        requestFramebuffer(incremental = false)
-    }
-
-    private suspend fun serverLoop(stream: WsByteStream) {
-        while (!stopped) {
-            when (stream.readU8()) {
-                0 -> readFramebufferUpdate(stream)
-                1 -> { // SetColorMapEntries; not used by our true-color format.
-                    stream.readU8()
-                    stream.readU16()
-                    val colors = stream.readU16().coerceAtMost(65_536)
-                    stream.readExactly(colors * 6)
-                }
-                2 -> Unit // bell
-                3 -> {
-                    stream.readExactly(3)
-                    val length = stream.readU32().toInt().coerceAtMost(4 * 1024 * 1024)
-                    stream.readExactly(length)
-                }
-                else -> error("Unsupported remote desktop server message")
-            }
-        }
-    }
-
-    private suspend fun readFramebufferUpdate(stream: WsByteStream) {
-        stream.readU8() // padding
-        val rectCount = stream.readU16()
-        var changed = false
-
-        repeat(rectCount) {
-            val header = stream.readExactly(12)
-            val x = u16(header, 0)
-            val y = u16(header, 2)
-            val width = u16(header, 4)
-            val height = u16(header, 6)
-            val encoding = i32(header, 8)
-
-            when (encoding) {
-                0 -> {
-                    val bytesNeeded = width.toLong() * height.toLong() * 4L
-                    if (bytesNeeded > 64L * 1024L * 1024L) error("Remote desktop frame is too large")
-                    val raw = stream.readExactly(bytesNeeded.toInt())
-                    applyRawRectangle(x, y, width, height, raw)
-                    changed = true
-                }
-                1 -> {
-                    val source = stream.readExactly(4)
-                    applyCopyRect(
-                        sourceX = u16(source, 0),
-                        sourceY = u16(source, 2),
-                        destX = x,
-                        destY = y,
-                        width = width,
-                        height = height
-                    )
-                    changed = true
-                }
-                5 -> {
-                    readHextileRectangle(stream, x, y, width, height)
-                    changed = true
-                }
-                -223 -> { // DesktopSize pseudo-encoding
-                    framebufferWidth = width
-                    framebufferHeight = height
-                    createBitmap(width, height)
-                    changed = true
-                }
-                else -> error("Unsupported RFB encoding $encoding")
-            }
-        }
-
-        if (changed) {
-            bitmap?.let { onFrame?.invoke(it) }
-            recordFrame()
-        }
-        requestFramebuffer(incremental = true)
-    }
-
-    private fun applyRawRectangle(x: Int, y: Int, width: Int, height: Int, raw: ByteArray) {
-        val target = bitmap ?: return
-        if (x < 0 || y < 0 || x + width > target.width || y + height > target.height) return
-        val pixels = IntArray(width * height)
-        var src = 0
-        for (i in pixels.indices) {
-            val b = raw[src].toInt() and 0xff
-            val g = raw[src + 1].toInt() and 0xff
-            val r = raw[src + 2].toInt() and 0xff
-            pixels[i] = (0xff shl 24) or (r shl 16) or (g shl 8) or b
-            src += 4
-        }
-        target.setPixels(pixels, 0, width, x, y, width, height)
-    }
-
-    private fun applyCopyRect(
-        sourceX: Int,
-        sourceY: Int,
-        destX: Int,
-        destY: Int,
-        width: Int,
-        height: Int
-    ) {
-        val target = bitmap ?: return
-        if (width <= 0 || height <= 0) return
-        if (sourceX < 0 || sourceY < 0 || destX < 0 || destY < 0) return
-        if (sourceX + width > target.width || sourceY + height > target.height) return
-        if (destX + width > target.width || destY + height > target.height) return
-        val pixels = IntArray(width * height)
-        target.getPixels(pixels, 0, width, sourceX, sourceY, width, height)
-        target.setPixels(pixels, 0, width, destX, destY, width, height)
-    }
-
-    private suspend fun readHextileRectangle(
-        stream: WsByteStream,
-        x: Int,
-        y: Int,
-        width: Int,
-        height: Int
-    ) {
-        val target = bitmap ?: return
-        var background = Color.BLACK
-        var foreground = Color.WHITE
-        var backgroundValid = false
-        var foregroundValid = false
-
-        var tileY = y
-        while (tileY < y + height) {
-            val tileHeight = min(16, y + height - tileY)
-            var tileX = x
-            while (tileX < x + width) {
-                val tileWidth = min(16, x + width - tileX)
-                val subencoding = stream.readU8()
-
-                if ((subencoding and 0x01) != 0) {
-                    val raw = stream.readExactly(tileWidth * tileHeight * 4)
-                    applyRawRectangle(tileX, tileY, tileWidth, tileHeight, raw)
-                    backgroundValid = false
-                    foregroundValid = false
-                    tileX += tileWidth
-                    continue
-                }
-
-                if ((subencoding and 0x02) != 0) {
-                    background = readPixel(stream)
-                    backgroundValid = true
-                }
-                if (!backgroundValid) error("Invalid Hextile background state")
-
-                if ((subencoding and 0x04) != 0) {
-                    foreground = readPixel(stream)
-                    foregroundValid = true
-                }
-
-                val pixels = IntArray(tileWidth * tileHeight) { background }
-
-                if ((subencoding and 0x08) != 0) {
-                    val subrects = stream.readU8()
-                    val coloured = (subencoding and 0x10) != 0
-
-                    repeat(subrects) {
-                        val color = if (coloured) {
-                            readPixel(stream)
-                        } else {
-                            if (!foregroundValid) error("Invalid Hextile foreground state")
-                            foreground
-                        }
-
-                        val xy = stream.readU8()
-                        val wh = stream.readU8()
-                        val sx = (xy ushr 4) and 0x0f
-                        val sy = xy and 0x0f
-                        val sw = ((wh ushr 4) and 0x0f) + 1
-                        val sh = (wh and 0x0f) + 1
-
-                        val maxX = min(tileWidth, sx + sw)
-                        val maxY = min(tileHeight, sy + sh)
-                        for (py in sy until maxY) {
-                            val row = py * tileWidth
-                            for (px in sx until maxX) {
-                                pixels[row + px] = color
-                            }
-                        }
-                    }
-                }
-
-                target.setPixels(pixels, 0, tileWidth, tileX, tileY, tileWidth, tileHeight)
-                tileX += tileWidth
-            }
-            tileY += tileHeight
-        }
-    }
-
-    private suspend fun readPixel(stream: WsByteStream): Int {
-        val pixel = stream.readExactly(4)
-        val b = pixel[0].toInt() and 0xff
-        val g = pixel[1].toInt() and 0xff
-        val r = pixel[2].toInt() and 0xff
-        return (0xff shl 24) or (r shl 16) or (g shl 8) or b
-    }
-
-    private fun recordFrame() {
-        fpsFrames++
-        val now = SystemClock.elapsedRealtime()
-        val elapsed = now - fpsWindowStarted
-        if (elapsed >= 1_000L) {
-            val fps = ((fpsFrames * 1_000L) / elapsed).toInt()
-            fpsFrames = 0
-            fpsWindowStarted = now
-            onFps?.invoke(fps)
-        }
-    }
-
-    private fun createBitmap(width: Int, height: Int) {
-        if (width <= 0 || height <= 0 || width > 8192 || height > 8192) error("Invalid desktop size")
-        bitmap?.recycle()
-        bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also {
-            it.eraseColor(Color.BLACK)
-        }
-    }
-
-    private fun sendPixelFormat() {
-        val msg = ByteArray(20)
-        msg[0] = 0
-        msg[4] = 32 // bits per pixel
-        msg[5] = 24 // depth
-        msg[6] = 0 // little-endian
-        msg[7] = 1 // true color
-        putU16(msg, 8, 255)
-        putU16(msg, 10, 255)
-        putU16(msg, 12, 255)
-        msg[14] = 16
-        msg[15] = 8
-        msg[16] = 0
-        sendRaw(msg)
-    }
-
-    private fun sendEncodings() {
-        val encodings = intArrayOf(
-            1,     // CopyRect: excellent for scrolling/window movement
-            5,     // Hextile: compact desktop updates without zlib overhead
-            0,     // Raw fallback
-            -223   // DesktopSize
-        )
-        val msg = ByteArray(4 + encodings.size * 4)
-        msg[0] = 2
-        putU16(msg, 2, encodings.size)
-        encodings.forEachIndexed { index, encoding ->
-            putI32(msg, 4 + index * 4, encoding)
-        }
-        sendRaw(msg)
-    }
-
-    private fun requestFramebuffer(incremental: Boolean) {
-        val width = framebufferWidth
-        val height = framebufferHeight
-        if (width <= 0 || height <= 0) return
-        val msg = ByteArray(10)
-        msg[0] = 3
-        msg[1] = if (incremental) 1 else 0
-        putU16(msg, 2, 0)
-        putU16(msg, 4, 0)
-        putU16(msg, 6, width)
-        putU16(msg, 8, height)
-        sendRaw(msg)
     }
 
     private fun pointer(x: Int, y: Int, mask: Int) {
         val width = framebufferWidth
         val height = framebufferHeight
         if (width <= 0 || height <= 0) return
+
         val msg = ByteArray(6)
         msg[0] = 5
         msg[1] = mask.toByte()
@@ -544,9 +297,6 @@ internal class RemoteDesktopClient(private val api: FatirApi) {
                 ((bytes[offset + 1].toLong() and 0xff) shl 16) or
                 ((bytes[offset + 2].toLong() and 0xff) shl 8) or
                 (bytes[offset + 3].toLong() and 0xff)
-
-        private fun i32(bytes: ByteArray, offset: Int): Int =
-            ByteBuffer.wrap(bytes, offset, 4).order(ByteOrder.BIG_ENDIAN).int
 
         private fun putU16(bytes: ByteArray, offset: Int, value: Int) {
             bytes[offset] = ((value ushr 8) and 0xff).toByte()
@@ -609,12 +359,45 @@ private class WsByteStream {
     }
 }
 
-internal class RemoteDesktopSurface(
+internal class RemoteDesktopHostView(
     context: Context,
-    private val client: RemoteDesktopClient
+    private val client: RemoteDesktopClient,
+    player: ExoPlayer
+) : FrameLayout(context) {
+    private val playerView = PlayerView(context).apply {
+        useController = false
+        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+        setBackgroundColor(Color.BLACK)
+        this.player = player
+        layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
+    }
+
+    private val controls = RemoteDesktopControlSurface(context, client) { zoom, panX, panY ->
+        playerView.scaleX = zoom
+        playerView.scaleY = zoom
+        playerView.translationX = panX
+        playerView.translationY = panY
+    }.apply {
+        layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
+    }
+
+    init {
+        setBackgroundColor(Color.BLACK)
+        addView(playerView)
+        addView(controls)
+    }
+
+    fun setDragLock(enabled: Boolean) = controls.setDragLock(enabled)
+    fun zoomIn() = controls.zoomIn()
+    fun zoomOut() = controls.zoomOut()
+    fun fit() = controls.fit()
+}
+
+private class RemoteDesktopControlSurface(
+    context: Context,
+    private val client: RemoteDesktopClient,
+    private val onTransform: (zoom: Float, panX: Float, panY: Float) -> Unit
 ) : View(context) {
-    private val paint = Paint(Paint.FILTER_BITMAP_FLAG)
-    private var bitmap: Bitmap? = null
     private var zoom = 1f
     private var panX = 0f
     private var panY = 0f
@@ -635,14 +418,7 @@ internal class RemoteDesktopSurface(
     init {
         isFocusable = true
         isFocusableInTouchMode = true
-        setBackgroundColor(Color.BLACK)
-        bitmap = client.currentFrame()
-        client.onFrame = { frame ->
-            post {
-                bitmap = frame
-                invalidate()
-            }
-        }
+        setBackgroundColor(Color.TRANSPARENT)
     }
 
     fun setDragLock(enabled: Boolean) {
@@ -651,34 +427,30 @@ internal class RemoteDesktopSurface(
 
     fun zoomIn() {
         zoom = (zoom * 1.25f).coerceAtMost(4f)
-        invalidate()
+        applyTransform()
     }
 
     fun zoomOut() {
         zoom = (zoom / 1.25f).coerceAtLeast(1f)
-        if (zoom == 1f) { panX = 0f; panY = 0f }
-        invalidate()
+        if (zoom == 1f) {
+            panX = 0f
+            panY = 0f
+        }
+        applyTransform()
     }
 
     fun fit() {
         zoom = 1f
         panX = 0f
         panY = 0f
-        invalidate()
-    }
-
-    override fun onDraw(canvas: Canvas) {
-        super.onDraw(canvas)
-        val frame = bitmap ?: return
-        val dest = destination(frame)
-        canvas.drawBitmap(frame, null, dest, paint)
+        applyTransform()
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        val frame = bitmap ?: return true
+        if (client.framebufferWidth <= 0 || client.framebufferHeight <= 0) return true
 
         if (event.pointerCount >= 2) {
-            handleTwoFinger(event, frame)
+            handleTwoFinger(event)
             return true
         }
 
@@ -695,7 +467,7 @@ internal class RemoteDesktopSurface(
                 if (multiTouch) return true
                 val distance = hypot(event.x - downX, event.y - downY)
                 if (distance > 8f) moved = true
-                val point = mapToFramebuffer(event.x, event.y, frame)
+                val point = mapToFramebuffer(event.x, event.y)
                 client.movePointer(point.first, point.second, dragLock)
             }
             MotionEvent.ACTION_UP -> {
@@ -704,7 +476,8 @@ internal class RemoteDesktopSurface(
                     multiTouch = false
                     return true
                 }
-                val point = mapToFramebuffer(event.x, event.y, frame)
+
+                val point = mapToFramebuffer(event.x, event.y)
                 if (dragLock && moved) {
                     client.releasePointer(point.first, point.second)
                 } else if (!moved) {
@@ -735,14 +508,14 @@ internal class RemoteDesktopSurface(
                 }
             }
             MotionEvent.ACTION_CANCEL -> {
-                val point = mapToFramebuffer(event.x, event.y, frame)
+                val point = mapToFramebuffer(event.x, event.y)
                 client.releasePointer(point.first, point.second)
             }
         }
         return true
     }
 
-    private fun handleTwoFinger(event: MotionEvent, frame: Bitmap) {
+    private fun handleTwoFinger(event: MotionEvent) {
         multiTouch = true
         val x0 = event.getX(0)
         val y0 = event.getY(0)
@@ -762,10 +535,12 @@ internal class RemoteDesktopSurface(
             MotionEvent.ACTION_MOVE -> {
                 val spanRatio = if (lastTwoFingerSpan > 0f) span / lastTwoFingerSpan else 1f
                 val vertical = centerY - lastTwoFingerY
+
                 if (abs(spanRatio - 1f) > 0.025f) {
                     twoFingerMoved = true
                     val oldZoom = zoom
                     zoom = (zoom * spanRatio).coerceIn(1f, 4f)
+
                     if (zoom == 1f) {
                         panX = 0f
                         panY = 0f
@@ -773,39 +548,53 @@ internal class RemoteDesktopSurface(
                         panX += (width / 2f - centerX) * (spanRatio - 1f)
                         panY += (height / 2f - centerY) * (spanRatio - 1f)
                     }
-                    invalidate()
+                    applyTransform()
                 } else if (abs(vertical) > 18f) {
                     twoFingerMoved = true
-                    val point = mapToFramebuffer(centerX, centerY, frame)
+                    val point = mapToFramebuffer(centerX, centerY)
                     client.scroll(point.first, point.second, if (vertical > 0) -1 else 1)
                 }
+
                 lastTwoFingerY = centerY
                 lastTwoFingerSpan = span
             }
             MotionEvent.ACTION_POINTER_UP -> {
                 val duration = SystemClock.uptimeMillis() - twoFingerStartAt
                 if (!twoFingerMoved && duration < 350) {
-                    val point = mapToFramebuffer(centerX, centerY, frame)
+                    val point = mapToFramebuffer(centerX, centerY)
                     client.rightClick(point.first, point.second)
                 }
             }
         }
     }
 
-    private fun destination(frame: Bitmap): RectF {
-        val fit = min(width.toFloat() / frame.width.toFloat(), height.toFloat() / frame.height.toFloat())
+    private fun applyTransform() {
+        onTransform(zoom, panX, panY)
+    }
+
+    private fun destination(): RectF {
+        val frameWidth = client.framebufferWidth.coerceAtLeast(1)
+        val frameHeight = client.framebufferHeight.coerceAtLeast(1)
+        val fit = min(width.toFloat() / frameWidth.toFloat(), height.toFloat() / frameHeight.toFloat())
         val scale = fit * zoom
-        val dw = frame.width * scale
-        val dh = frame.height * scale
+        val dw = frameWidth * scale
+        val dh = frameHeight * scale
         val left = (width - dw) / 2f + panX
         val top = (height - dh) / 2f + panY
         return RectF(left, top, left + dw, top + dh)
     }
 
-    private fun mapToFramebuffer(x: Float, y: Float, frame: Bitmap): Pair<Int, Int> {
-        val dest = destination(frame)
-        val fx = ((x - dest.left) / dest.width() * frame.width).toInt().coerceIn(0, frame.width - 1)
-        val fy = ((y - dest.top) / dest.height() * frame.height).toInt().coerceIn(0, frame.height - 1)
+    private fun mapToFramebuffer(x: Float, y: Float): Pair<Int, Int> {
+        val frameWidth = client.framebufferWidth.coerceAtLeast(1)
+        val frameHeight = client.framebufferHeight.coerceAtLeast(1)
+        val dest = destination()
+
+        val fx = ((x - dest.left) / dest.width() * frameWidth)
+            .toInt()
+            .coerceIn(0, frameWidth - 1)
+        val fy = ((y - dest.top) / dest.height() * frameHeight)
+            .toInt()
+            .coerceIn(0, frameHeight - 1)
         return fx to fy
     }
 }
@@ -817,7 +606,8 @@ internal fun RemoteDesktopScreen(
 ) {
     val scope = rememberCoroutineScope()
     val keyboard = LocalSoftwareKeyboardController.current
-    val activity = LocalContext.current as? Activity
+    val context = LocalContext.current
+    val activity = context as? Activity
 
     DisposableEffect(activity) {
         val previous = activity?.requestedOrientation
@@ -836,29 +626,85 @@ internal fun RemoteDesktopScreen(
             }
         }
     }
+
     val focusRequester = remember { FocusRequester() }
     val client = remember(api) { RemoteDesktopClient(api) }
 
+    val player = remember(api) {
+        val httpFactory = DefaultHttpDataSource.Factory()
+            .setDefaultRequestProperties(mapOf("Authorization" to api.authorizationHeader()))
+            .setConnectTimeoutMs(12_000)
+            .setReadTimeoutMs(30_000)
+
+        val loadControl = DefaultLoadControl.Builder()
+            .setBufferDurationsMs(
+                120,  // min buffer
+                450,  // max buffer
+                80,   // playback start
+                120   // after rebuffer
+            )
+            .setPrioritizeTimeOverSizeThresholds(true)
+            .build()
+
+        ExoPlayer.Builder(context)
+            .setLoadControl(loadControl)
+            .setMediaSourceFactory(
+                DefaultMediaSourceFactory(context).setDataSourceFactory(httpFactory)
+            )
+            .build()
+    }
+
     var status by remember { mutableStateOf("Starting…") }
-    var fps by remember { mutableIntStateOf(0) }
+    var videoState by remember { mutableStateOf("Video starting…") }
     var error by remember { mutableStateOf<String?>(null) }
     var dragLock by remember { mutableStateOf(false) }
     var keyboardOpen by remember { mutableStateOf(false) }
     var keyboardSink by remember { mutableStateOf("") }
-    var surface by remember { mutableStateOf<RemoteDesktopSurface?>(null) }
+    var hostView by remember { mutableStateOf<RemoteDesktopHostView?>(null) }
     var serverReady by remember { mutableStateOf(false) }
 
-    DisposableEffect(client) {
+    DisposableEffect(client, player) {
         client.onState = { value ->
             android.os.Handler(android.os.Looper.getMainLooper()).post {
                 status = value
                 if (value == "Connected") error = null
             }
         }
-        client.onError = { value -> android.os.Handler(android.os.Looper.getMainLooper()).post { error = value } }
-        client.onFps = { value -> android.os.Handler(android.os.Looper.getMainLooper()).post { fps = value } }
+        client.onError = { value ->
+            android.os.Handler(android.os.Looper.getMainLooper()).post { error = value }
+        }
+
+        val playerListener = object : Player.Listener {
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                videoState = when (playbackState) {
+                    Player.STATE_BUFFERING -> "H.264 buffering…"
+                    Player.STATE_READY -> if (player.isPlaying) "H.264 · 30 fps" else "H.264 ready"
+                    Player.STATE_ENDED -> "Video stream ended"
+                    else -> "Video starting…"
+                }
+            }
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (isPlaying) videoState = "H.264 · 30 fps"
+            }
+
+            override fun onPlayerError(errorValue: androidx.media3.common.PlaybackException) {
+                videoState = "Video reconnecting…"
+                scope.launch {
+                    delay(750)
+                    runCatching {
+                        player.prepare()
+                        player.playWhenReady = true
+                    }
+                }
+            }
+        }
+        player.addListener(playerListener)
+
         onDispose {
             client.stop()
+            player.removeListener(playerListener)
+            player.release()
             scope.launch(Dispatchers.IO) { runCatching { api.stopRemoteDesktop() } }
         }
     }
@@ -868,10 +714,20 @@ internal fun RemoteDesktopScreen(
         status = "Starting Linux desktop…"
         try {
             val result = api.startRemoteDesktop()
-            if (!result.available) error(result.message)
-            else {
+            if (!result.available) {
+                error = result.message
+            } else {
                 serverReady = true
                 client.start()
+
+                player.setMediaItem(
+                    MediaItem.Builder()
+                        .setUri(api.remoteDesktopVideoUrl())
+                        .setMimeType(MimeTypes.VIDEO_MP2T)
+                        .build()
+                )
+                player.prepare()
+                player.playWhenReady = true
             }
         } catch (t: Throwable) {
             error = t.message ?: "Unable to start Remote Desktop"
@@ -882,8 +738,8 @@ internal fun RemoteDesktopScreen(
     Box(Modifier.fillMaxSize().background(ComposeColor.Black)) {
         if (serverReady) {
             AndroidView(
-                factory = { context ->
-                    RemoteDesktopSurface(context, client).also { surface = it }
+                factory = { ctx ->
+                    RemoteDesktopHostView(ctx, client, player).also { hostView = it }
                 },
                 modifier = Modifier.fillMaxSize()
             )
@@ -894,27 +750,37 @@ internal fun RemoteDesktopScreen(
             shape = MaterialTheme.shapes.large,
             modifier = Modifier
                 .align(Alignment.TopCenter)
-                .statusBarsPadding()
                 .padding(10.dp)
         ) {
             Row(
                 Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = onExit) { Icon(Icons.Outlined.Close, "Close", tint = ComposeColor.White) }
+                IconButton(onClick = onExit) {
+                    Icon(Icons.Outlined.Close, "Close", tint = ComposeColor.White)
+                }
+
                 Column(Modifier.weight(1f)) {
                     Text("Remote Desktop", color = ComposeColor.White, fontSize = 14.sp)
                     Text(
                         if (error.isNullOrBlank()) {
-                            if (status == "Connected" && fps > 0) "Connected · $fps fps" else status
+                            if (status == "Connected") "$videoState · controls connected" else status
                         } else error!!,
                         color = if (error.isNullOrBlank()) ComposeColor(0xFFBDBDBD) else ComposeColor(0xFFFFA7A7),
                         fontSize = 10.sp,
                         maxLines = 2
                     )
                 }
-                if (status == "Connected") {
-                    Box(Modifier.size(8.dp).background(ComposeColor(0xFF45C17A), androidx.compose.foundation.shape.CircleShape))
+
+                if (status == "Connected" && videoState.startsWith("H.264")) {
+                    Box(
+                        Modifier
+                            .size(8.dp)
+                            .background(
+                                ComposeColor(0xFF45C17A),
+                                androidx.compose.foundation.shape.CircleShape
+                            )
+                    )
                 }
             }
         }
@@ -924,7 +790,6 @@ internal fun RemoteDesktopScreen(
             shape = MaterialTheme.shapes.large,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .navigationBarsPadding()
                 .padding(10.dp)
         ) {
             Row(
@@ -940,12 +805,17 @@ internal fun RemoteDesktopScreen(
                             focusRequester.requestFocus()
                             keyboard?.show()
                         }
-                    } else keyboard?.hide()
-                }) { Icon(Icons.Outlined.Keyboard, "Keyboard", tint = ComposeColor.White) }
+                    } else {
+                        keyboard?.hide()
+                    }
+                }) {
+                    Icon(Icons.Outlined.Keyboard, "Keyboard", tint = ComposeColor.White)
+                }
 
                 IconButton(onClick = { client.sendSpecial(RemoteDesktopClient.KEY_BACKSPACE) }) {
                     Icon(Icons.Outlined.Backspace, "Backspace", tint = ComposeColor.White)
                 }
+
                 IconButton(onClick = { client.sendSpecial(RemoteDesktopClient.KEY_ENTER) }) {
                     Icon(Icons.Outlined.KeyboardReturn, "Enter", tint = ComposeColor.White)
                 }
@@ -953,20 +823,20 @@ internal fun RemoteDesktopScreen(
                 FilledTonalButton(
                     onClick = {
                         dragLock = !dragLock
-                        surface?.setDragLock(dragLock)
+                        hostView?.setDragLock(dragLock)
                     },
                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)
                 ) {
                     Text(if (dragLock) "Drag ON" else "Drag")
                 }
 
-                IconButton(onClick = { surface?.zoomOut() }) {
+                IconButton(onClick = { hostView?.zoomOut() }) {
                     Icon(Icons.Outlined.Remove, "Zoom out", tint = ComposeColor.White)
                 }
-                IconButton(onClick = { surface?.fit() }) {
+                IconButton(onClick = { hostView?.fit() }) {
                     Icon(Icons.Outlined.FitScreen, "Fit", tint = ComposeColor.White)
                 }
-                IconButton(onClick = { surface?.zoomIn() }) {
+                IconButton(onClick = { hostView?.zoomIn() }) {
                     Icon(Icons.Outlined.Add, "Zoom in", tint = ComposeColor.White)
                 }
             }
@@ -999,9 +869,23 @@ internal fun RemoteDesktopScreen(
                 Modifier.align(Alignment.Center).padding(28.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Icon(Icons.Outlined.DesktopWindows, null, tint = ComposeColor.White, modifier = Modifier.size(48.dp))
-                Text("Remote Desktop unavailable", color = ComposeColor.White, modifier = Modifier.padding(top = 12.dp))
-                Text(error!!, color = ComposeColor(0xFFBDBDBD), fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+                Icon(
+                    Icons.Outlined.DesktopWindows,
+                    null,
+                    tint = ComposeColor.White,
+                    modifier = Modifier.size(48.dp)
+                )
+                Text(
+                    "Remote Desktop unavailable",
+                    color = ComposeColor.White,
+                    modifier = Modifier.padding(top = 12.dp)
+                )
+                Text(
+                    error!!,
+                    color = ComposeColor(0xFFBDBDBD),
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(top = 6.dp)
+                )
                 TextButton(onClick = onExit) { Text("Back") }
             }
         }
