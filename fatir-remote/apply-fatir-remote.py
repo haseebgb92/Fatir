@@ -21,6 +21,14 @@ text = gradle.read_text()
 text = text.replace('compileSdk 37', 'compileSdk 36')
 text = text.replace("com.squareup.okhttp3:okhttp:5.5.0", "com.squareup.okhttp3:okhttp:5.4.0")
 text = text.replace('versionName "12.2"', 'versionName "12.2-fatir.1"')
+text = text.replace('resValue "string", "app_label", "Moonlight (Debug)"',
+                    'resValue "string", "app_label", "Fatir Remote"')
+text = text.replace('resValue "string", "app_label_root", "Moonlight (Root Debug)"',
+                    'resValue "string", "app_label_root", "Fatir Remote (Root)"')
+text = text.replace('resValue "string", "app_label", "Moonlight"',
+                    'resValue "string", "app_label", "Fatir Remote"')
+text = text.replace('resValue "string", "app_label_root", "Moonlight (Root)"',
+                    'resValue "string", "app_label_root", "Fatir Remote (Root)"')
 text = text.replace('applicationId "com.limelight.root"', 'applicationId "com.fatir.remote.root"')
 text = text.replace('applicationId "com.limelight"', 'applicationId "com.fatir.remote"')
 gradle.write_text(text)
@@ -29,7 +37,7 @@ manifest = root / "app/src/main/AndroidManifest.xml"
 text = manifest.read_text()
 text = text.replace(
     '<application\n        android:allowBackup="true"',
-    '<application\n        android:allowBackup="false"\n        android:label="Fatir Remote"'
+    '<application\n        android:allowBackup="false"'
 )
 text = text.replace('android:icon="@mipmap/ic_launcher"', 'android:icon="@drawable/fatir_mark"')
 manifest.write_text(text)
