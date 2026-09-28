@@ -175,34 +175,6 @@ class FatirApi(
 
     suspend fun deny(actionId: String): AgentResponse = action("/api/v1/deny", actionId)
 
-    suspend fun remoteDesktopStatus(): RemoteDesktopStatus = withContext(Dispatchers.IO) {
-        executeJson(authedRequest("$baseUrl/api/v1/remote/desktop/status").get().build())
-    }
-
-    suspend fun startRemoteDesktop(): RemoteDesktopStatus = withContext(Dispatchers.IO) {
-        executeJson(
-            authedRequest("$baseUrl/api/v1/remote/desktop/start")
-                .post(ByteArray(0).toRequestBody(null))
-                .build()
-        )
-    }
-
-    suspend fun stopRemoteDesktop(): RemoteDesktopStatus = withContext(Dispatchers.IO) {
-        executeJson(
-            authedRequest("$baseUrl/api/v1/remote/desktop/stop")
-                .post(ByteArray(0).toRequestBody(null))
-                .build()
-        )
-    }
-
-    fun remoteDesktopWebSocketUrl(): String =
-        "$baseUrl/api/v1/remote/desktop/ws".toHttpUrl().toString()
-
-    fun remoteDesktopVideoUrl(): String =
-        "$baseUrl/api/v1/remote/desktop/video".toHttpUrl().toString()
-
-    fun authorizationHeader(): String = "Bearer $token"
-
     suspend fun roots(): RootsResponse = withContext(Dispatchers.IO) {
         executeJson(authedRequest("$baseUrl/api/v1/files/roots").get().build())
     }
