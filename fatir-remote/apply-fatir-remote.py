@@ -19,6 +19,7 @@ def replace(path: Path, old: str, new: str):
 gradle = root / "app/build.gradle"
 text = gradle.read_text()
 text = text.replace('compileSdk 37', 'compileSdk 36')
+text = text.replace("com.squareup.okhttp3:okhttp:5.5.0", "com.squareup.okhttp3:okhttp:5.4.0")
 text = text.replace('versionName "12.2"', 'versionName "12.2-fatir.1"')
 text = text.replace('applicationId "com.limelight.root"', 'applicationId "com.fatir.remote.root"')
 text = text.replace('applicationId "com.limelight"', 'applicationId "com.fatir.remote"')
