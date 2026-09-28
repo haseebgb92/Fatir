@@ -24,7 +24,7 @@ import androidx.compose.ui.unit.sp
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 private const val FATIR_REMOTE_PACKAGE = "com.fatir.remote"
-private const val FATIR_REMOTE_ACTIVITY = "com.limelight.PcView"
+private const val FATIR_REMOTE_ACTIVITY = "com.limelight.preferences.AddComputerManually"
 
 @Composable
 internal fun RemoteDesktopScreen(
@@ -39,9 +39,9 @@ internal fun RemoteDesktopScreen(
 
     fun openRemote() {
         try {
-            val intent = Intent(Intent.ACTION_MAIN).apply {
+            val intent = Intent().apply {
                 component = ComponentName(FATIR_REMOTE_PACKAGE, FATIR_REMOTE_ACTIVITY)
-                addCategory(Intent.CATEGORY_LAUNCHER)
+                putExtra("FatirHost", hostAddress)
                 addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
             }
             context.startActivity(intent)
