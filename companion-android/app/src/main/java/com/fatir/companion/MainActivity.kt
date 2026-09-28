@@ -369,10 +369,7 @@ private fun FatirApp() {
 
                 Screen.REMOTE_DESKTOP -> RemoteDesktopScreen(
                     api = api!!,
-                    onExit = {
-                        screen = Screen.CHAT
-                        scope.launch(Dispatchers.IO) { runCatching { api!!.stopRemoteDesktop() } }
-                    }
+                    onExit = { screen = Screen.CHAT }
                 )
 
                 Screen.CHAT_FILES -> ChatFilesScreen(
