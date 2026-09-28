@@ -293,8 +293,8 @@ host_replacement = '''        // Bind to the ComputerManager service
         bindService(new Intent(AddComputerManually.this,
                     ComputerManagerService.class), serviceConnection, Service.BIND_AUTO_CREATE);
 
-        // Fatir Companion already knows the Linux/Tailscale host. Accept it as
-        // an explicit handoff so remote desktop does not depend on mDNS discovery.
+        // Internal Fatir handoff. This activity remains non-exported: only PcView
+        // receives the cross-app intent, then forwards the already-known host here.
         String fatirHost = getIntent().getStringExtra("FatirHost");
         if (fatirHost != null && !fatirHost.trim().isEmpty()) {
             fatirHost = fatirHost.trim();
@@ -305,6 +305,42 @@ host_replacement = '''        // Bind to the ComputerManager service
 if host_marker not in add_text:
     raise RuntimeError("FatirHost handoff marker not found")
 add_text = add_text.replace(host_marker, host_replacement, 1)
+
+success_marker = '''        else {
+            AddComputerManually.this.runOnUiThread(new Runnable() {'''
+success_replacement = '''        else {
+            getSharedPreferences("FatirRemote", MODE_PRIVATE)
+                    .edit()
+                    .putString("LastHost", rawUserInput)
+                    .apply();
+
+            AddComputerManually.this.runOnUiThread(new Runnable() {'''
+if success_marker not in add_text:
+    raise RuntimeError("FatirHost success marker not found")
+add_text = add_text.replace(success_marker, success_replacement, 1)
 add_pc.write_text(add_text)
+
+pc_view = root / "app/src/main/java/com/limelight/PcView.java"
+pc_text = pc_view.read_text()
+complete_marker = '''        initializeViews();
+    }'''
+complete_replacement = '''        initializeViews();
+
+        String fatirHost = getIntent().getStringExtra("FatirHost");
+        if (fatirHost != null && !fatirHost.trim().isEmpty()) {
+            fatirHost = fatirHost.trim();
+            String lastHost = getSharedPreferences("FatirRemote", MODE_PRIVATE)
+                    .getString("LastHost", "");
+            if (!fatirHost.equals(lastHost)) {
+                Intent addIntent = new Intent(PcView.this, AddComputerManually.class);
+                addIntent.putExtra("FatirHost", fatirHost);
+                startActivity(addIntent);
+            }
+        }
+    }'''
+if complete_marker not in pc_text:
+    raise RuntimeError("PcView FatirHost bridge marker not found")
+pc_text = pc_text.replace(complete_marker, complete_replacement, 1)
+pc_view.write_text(pc_text)
 
 print("Fatir Remote patches applied")
