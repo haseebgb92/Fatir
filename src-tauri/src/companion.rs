@@ -1,12 +1,12 @@
 use axum::{
     body::Body,
-    extract::{ws::{Message as WsMessage, WebSocket, WebSocketUpgrade}, Path as AxumPath, Query, State},
+    extract::{Path as AxumPath, Query, State},
     http::{header, HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
-use futures_util::{SinkExt, StreamExt};
+use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
@@ -17,7 +17,7 @@ use std::{
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use tokio::{fs::File, io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt}, net::{TcpListener, TcpStream}, sync::RwLock};
+use tokio::{fs::File, io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt}, net::TcpListener, sync::RwLock};
 use tokio_util::io::ReaderStream;
 use uuid::Uuid;
 
@@ -26,7 +26,6 @@ use crate::{
     chat_history,
     models::{AgentResponse, Attachment},
     ollama::{self, SharedState},
-    remote_desktop::RemoteDesktopService,
 };
 
 pub const COMPANION_PORT: u16 = 32145;
@@ -50,7 +49,6 @@ pub struct CompanionService {
     roots: Arc<Vec<PathBuf>>,
     upload_dir: Arc<PathBuf>,
     runs: Arc<RwLock<HashMap<String, ChatRun>>>,
-    remote_desktop: RemoteDesktopService,
     info: CompanionInfo,
 }
 
@@ -187,7 +185,6 @@ impl CompanionService {
             roots: Arc::new(roots),
             upload_dir: Arc::new(upload_dir),
             runs: Arc::new(RwLock::new(HashMap::new())),
-            remote_desktop: RemoteDesktopService::new(),
             info,
         }
     }
@@ -213,11 +210,6 @@ impl CompanionService {
             .route("/api/v1/chats/messages", get(chat_messages))
             .route("/api/v1/agent/schedules", get(agent_schedule_list))
             .route("/api/v1/agent/schedule/run", post(agent_schedule_run))
-            .route("/api/v1/remote/desktop/status", get(remote_desktop_status))
-            .route("/api/v1/remote/desktop/start", post(remote_desktop_start))
-            .route("/api/v1/remote/desktop/stop", post(remote_desktop_stop))
-            .route("/api/v1/remote/desktop/ws", get(remote_desktop_ws))
-            .route("/api/v1/remote/desktop/video", get(remote_desktop_video))
             .with_state(self);
 
         let listener = TcpListener::bind(("0.0.0.0", COMPANION_PORT)).await?;
@@ -748,110 +740,6 @@ async fn agent_schedule_run(
     match agent_schedules::run(state.shared.clone(),&query.id).await {
         Ok(value)=>Json(value).into_response(),
         Err(e)=>error(StatusCode::INTERNAL_SERVER_ERROR,&e.to_string()),
-    }
-}
-
-async fn remote_desktop_status(
-    State(state): State<CompanionService>,
-    headers: HeaderMap,
-) -> Response {
-    if let Err(response) = require_auth(&headers, &state) { return response; }
-    Json(state.remote_desktop.status().await).into_response()
-}
-
-async fn remote_desktop_start(
-    State(state): State<CompanionService>,
-    headers: HeaderMap,
-) -> Response {
-    if let Err(response) = require_auth(&headers, &state) { return response; }
-    match state.remote_desktop.ensure_started().await {
-        Ok(_) => Json(state.remote_desktop.status().await).into_response(),
-        Err(err) => error(StatusCode::SERVICE_UNAVAILABLE, &err.to_string()),
-    }
-}
-
-async fn remote_desktop_stop(
-    State(state): State<CompanionService>,
-    headers: HeaderMap,
-) -> Response {
-    if let Err(response) = require_auth(&headers, &state) { return response; }
-    match state.remote_desktop.stop().await {
-        Ok(()) => Json(state.remote_desktop.status().await).into_response(),
-        Err(err) => error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()),
-    }
-}
-
-async fn remote_desktop_ws(
-    ws: WebSocketUpgrade,
-    State(state): State<CompanionService>,
-    headers: HeaderMap,
-) -> Response {
-    if let Err(response) = require_auth(&headers, &state) { return response; }
-    match state.remote_desktop.ensure_started().await {
-        Ok(port) => ws.on_upgrade(move |socket| proxy_remote_desktop(socket, port)).into_response(),
-        Err(err) => error(StatusCode::SERVICE_UNAVAILABLE, &err.to_string()),
-    }
-}
-async fn remote_desktop_video(
-    State(state): State<CompanionService>,
-    headers: HeaderMap,
-) -> Response {
-    if let Err(response) = require_auth(&headers, &state) { return response; }
-
-    match state.remote_desktop.spawn_video_stream().await {
-        Ok(stdout) => {
-            let stream = ReaderStream::new(stdout);
-            let body = Body::from_stream(stream);
-            let mut response = Response::new(body);
-            *response.status_mut() = StatusCode::OK;
-            response.headers_mut().insert(
-                header::CONTENT_TYPE,
-                HeaderValue::from_static("video/mp2t"),
-            );
-            response.headers_mut().insert(
-                header::CACHE_CONTROL,
-                HeaderValue::from_static("no-store, no-cache, must-revalidate"),
-            );
-            response
-        }
-        Err(err) => error(StatusCode::SERVICE_UNAVAILABLE, &err.to_string()),
-    }
-}
-
-
-async fn proxy_remote_desktop(socket: WebSocket, port: u16) {
-    let Ok(stream) = TcpStream::connect(("127.0.0.1", port)).await else { return; };
-    let (mut tcp_read, mut tcp_write) = stream.into_split();
-    let (mut ws_write, mut ws_read) = socket.split();
-
-    let tcp_to_ws = async {
-        let mut buffer = vec![0u8; 64 * 1024];
-        loop {
-            let count = match tcp_read.read(&mut buffer).await {
-                Ok(0) | Err(_) => break,
-                Ok(count) => count,
-            };
-            if ws_write.send(WsMessage::Binary(buffer[..count].to_vec())).await.is_err() {
-                break;
-            }
-        }
-    };
-
-    let ws_to_tcp = async {
-        while let Some(message) = ws_read.next().await {
-            match message {
-                Ok(WsMessage::Binary(data)) => {
-                    if tcp_write.write_all(&data).await.is_err() { break; }
-                }
-                Ok(WsMessage::Close(_)) | Err(_) => break,
-                _ => {}
-            }
-        }
-    };
-
-    tokio::select! {
-        _ = tcp_to_ws => {},
-        _ = ws_to_tcp => {},
     }
 }
 
