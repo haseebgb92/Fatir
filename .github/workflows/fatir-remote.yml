@@ -1,0 +1,73 @@
+name: Fatir Remote (Sunshine / Moonlight)
+
+on:
+  push:
+    branches:
+      - sunshine-moonlight-remote-v0.7
+    paths:
+      - "fatir-remote/**"
+      - "ui/assets/fatir-mark.png"
+      - ".github/workflows/fatir-remote.yml"
+  workflow_dispatch:
+
+jobs:
+  build-fatir-remote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out Fatir patches
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform and NDK
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-37" "build-tools;37.0.0" "ndk;29.0.14206865"
+
+      - name: Clone pinned Moonlight Android
+        shell: bash
+        run: |
+          git clone https://github.com/moonlight-stream/moonlight-android.git "$RUNNER_TEMP/moonlight-android"
+          cd "$RUNNER_TEMP/moonlight-android"
+          git checkout b48494cb96bff23d8886c4775cc4f39a1075495d
+          git submodule update --init --recursive
+
+      - name: Apply Fatir Remote patch
+        shell: bash
+        run: |
+          python3 "$GITHUB_WORKSPACE/fatir-remote/apply-fatir-remote.py" \
+            "$RUNNER_TEMP/moonlight-android" \
+            "$GITHUB_WORKSPACE/ui/assets/fatir-mark.png"
+
+      - name: Build Fatir Remote APK
+        shell: bash
+        run: |
+          cd "$RUNNER_TEMP/moonlight-android"
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleNonRootDebug
+
+      - name: Collect APK
+        shell: bash
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/out"
+          APK="$(find "$RUNNER_TEMP/moonlight-android/app/build/outputs/apk" -type f -name "*.apk" | head -n 1)"
+          test -n "$APK"
+          cp "$APK" "$GITHUB_WORKSPACE/out/Fatir-Remote-v1.0.0-Sunshine.apk"
+          sha256sum "$GITHUB_WORKSPACE/out/Fatir-Remote-v1.0.0-Sunshine.apk"
+
+      - name: Upload Fatir Remote APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: fatir-remote-sunshine
+          path: out/Fatir-Remote-v1.0.0-Sunshine.apk
+          if-no-files-found: error
