@@ -31,6 +31,7 @@ text = text.replace('resValue "string", "app_label_root", "Moonlight (Root)"',
                     'resValue "string", "app_label_root", "Fatir Remote (Root)"')
 text = text.replace('applicationId "com.limelight.root"', 'applicationId "com.fatir.remote.root"')
 text = text.replace('applicationId "com.limelight"', 'applicationId "com.fatir.remote"')
+text = text.replace('applicationIdSuffix ".debug"', '')
 gradle.write_text(text)
 
 manifest = root / "app/src/main/AndroidManifest.xml"
