@@ -186,6 +186,52 @@ overlay_path.write_text(overlay)
 game = root / "app/src/main/java/com/limelight/Game.java"
 game_text = game.read_text()
 
+# Moonlight 12.2 references two API 37-only latency/input helpers. Fatir Remote
+# builds against stable API 36, so call those helpers reflectively when they exist.
+old_keyboard = '''        // Android has native keyboard capture support starting in API 36.1
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA && Build.VERSION.SDK_INT_FULL >= Build.VERSION_CODES_FULL.BAKLAVA_1) {
+            WindowManager.LayoutParams windowLayoutParams = getWindow().getAttributes();
+            windowLayoutParams.setKeyboardCaptureEnabled(enabled);
+            getWindow().setAttributes(windowLayoutParams);
+        }
+        else {'''
+new_keyboard = '''        // Newer Android releases expose native keyboard capture. Use reflection so
+        // this source remains buildable with the stable API 36 SDK.
+        if (Build.VERSION.SDK_INT >= 36) {
+            try {
+                WindowManager.LayoutParams windowLayoutParams = getWindow().getAttributes();
+                Method captureMethod = WindowManager.LayoutParams.class.getMethod(
+                        "setKeyboardCaptureEnabled", boolean.class);
+                captureMethod.invoke(windowLayoutParams, enabled);
+                getWindow().setAttributes(windowLayoutParams);
+                return;
+            } catch (ReflectiveOperationException ignored) {
+                // Fall through to Samsung's compatibility path below.
+            }
+        }
+        {'''
+if old_keyboard not in game_text:
+    raise RuntimeError("API 37 keyboard capture marker not found")
+game_text = game_text.replace(old_keyboard, new_keyboard, 1)
+
+old_throttle = '''        // Disable producer throttling on the underlying surface for reduced latency
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.CINNAMON_BUN) {
+            holder.getSurface().setProducerThrottlingEnabled(false);
+        }'''
+new_throttle = '''        // Disable producer throttling when the platform exposes the API. Reflection
+        // preserves the optimization on newer Android without requiring API 37 to compile.
+        if (Build.VERSION.SDK_INT >= 36) {
+            try {
+                Method throttleMethod = Surface.class.getMethod(
+                        "setProducerThrottlingEnabled", boolean.class);
+                throttleMethod.invoke(holder.getSurface(), false);
+            } catch (ReflectiveOperationException ignored) {
+            }
+        }'''
+if old_throttle not in game_text:
+    raise RuntimeError("API 37 producer throttling marker not found")
+game_text = game_text.replace(old_throttle, new_throttle, 1)
+
 install_marker = '        performanceOverlayView = findViewById(R.id.performanceOverlay);'
 if install_marker not in game_text:
     raise RuntimeError("Game.java overlay install marker not found")
