@@ -18,6 +18,7 @@ def replace(path: Path, old: str, new: str):
 # Keep upstream Java packages intact, but give the fork its own Android application ID.
 gradle = root / "app/build.gradle"
 text = gradle.read_text()
+text = text.replace('compileSdk 37', 'compileSdk 36')
 text = text.replace('versionName "12.2"', 'versionName "12.2-fatir.1"')
 text = text.replace('applicationId "com.limelight.root"', 'applicationId "com.fatir.remote.root"')
 text = text.replace('applicationId "com.limelight"', 'applicationId "com.fatir.remote"')
