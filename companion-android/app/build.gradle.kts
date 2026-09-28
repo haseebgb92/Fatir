@@ -13,8 +13,8 @@ android {
         applicationId = "com.fatir.companion"
         minSdk = 26
         targetSdk = 35
-        versionCode = 9
-        versionName = "0.6.0-h264-remote-desktop"
+        versionCode = 10
+        versionName = "0.7.0-sunshine-remote"
     }
 
     buildFeatures {
