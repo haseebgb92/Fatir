@@ -282,4 +282,29 @@ helpers = r'''    // Fatir Remote overlay hooks. Keep these package-private so t
 game_text = game_text.replace(helper_marker, helpers + helper_marker, 1)
 game.write_text(game_text)
 
+add_pc = root / "app/src/main/java/com/limelight/preferences/AddComputerManually.java"
+add_text = add_pc.read_text()
+
+host_marker = '''        // Bind to the ComputerManager service
+        bindService(new Intent(AddComputerManually.this,
+                    ComputerManagerService.class), serviceConnection, Service.BIND_AUTO_CREATE);
+    }'''
+host_replacement = '''        // Bind to the ComputerManager service
+        bindService(new Intent(AddComputerManually.this,
+                    ComputerManagerService.class), serviceConnection, Service.BIND_AUTO_CREATE);
+
+        // Fatir Companion already knows the Linux/Tailscale host. Accept it as
+        // an explicit handoff so remote desktop does not depend on mDNS discovery.
+        String fatirHost = getIntent().getStringExtra("FatirHost");
+        if (fatirHost != null && !fatirHost.trim().isEmpty()) {
+            fatirHost = fatirHost.trim();
+            hostText.setText(fatirHost);
+            computersToAdd.add(fatirHost);
+        }
+    }'''
+if host_marker not in add_text:
+    raise RuntimeError("FatirHost handoff marker not found")
+add_text = add_text.replace(host_marker, host_replacement, 1)
+add_pc.write_text(add_text)
+
 print("Fatir Remote patches applied")
