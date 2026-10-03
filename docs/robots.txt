@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://haseebgb92.github.io/Fatir/sitemap.xml

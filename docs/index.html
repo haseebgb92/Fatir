@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Fatir — Local-First AI Desktop Assistant for Linux</title>
+<meta name="description" content="Fatir is a resident local-first AI desktop assistant for Linux Mint/Cinnamon with desktop control, browser automation, Ollama routing, memory, schedules, verified execution and approval-aware automation.">
+<meta name="robots" content="index,follow,max-image-preview:large">
+<link rel="canonical" href="https://haseebgb92.github.io/Fatir/">
+<link rel="icon" type="image/png" href="images/fatir-mark.png">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Fatir — Local-First AI Desktop Assistant for Linux">
+<meta property="og:description" content="A resident Linux AI operator that controls desktop apps, works with your active browser, runs local-first models, remembers context and verifies work before reporting success.">
+<meta property="og:url" content="https://haseebgb92.github.io/Fatir/">
+<meta property="og:image" content="https://raw.githubusercontent.com/haseebgb92/Fatir/main/docs/images/fatir-sidebar.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Fatir — Local-First AI Desktop Assistant for Linux">
+<meta name="twitter:description" content="Resident Linux AI operator with desktop control, browser automation, local-first model routing, memory and verified execution.">
+<meta name="twitter:image" content="https://raw.githubusercontent.com/haseebgb92/Fatir/main/docs/images/fatir-sidebar.png">
+<style>
+:root{
+ --bg:#fbfaf7;--panel:#fff;--ink:#171816;--muted:#6f736d;--line:#e8e6df;--gold:#b58a3c;--green:#607b5a;--soft:#f4f1e8;
+ --shadow:0 28px 90px rgba(38,34,23,.09);--shadow2:0 12px 36px rgba(38,34,23,.06)
+}
+*{box-sizing:border-box}html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.65 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+a{color:inherit}img{display:block;max-width:100%}.shell{width:min(1180px,calc(100% - 36px));margin:auto}
+.topbar{position:sticky;top:0;z-index:20;border-bottom:1px solid rgba(232,230,223,.9);background:rgba(251,250,247,.88);backdrop-filter:blur(18px)}
+.nav{height:72px;display:flex;align-items:center;justify-content:space-between;gap:20px}.brand{display:flex;align-items:center;gap:10px;text-decoration:none;font-weight:850;letter-spacing:-.02em}
+.brand img{width:36px;height:36px;border-radius:10px}.navlinks{display:flex;gap:24px;color:var(--muted);font-size:14px}.navlinks a{text-decoration:none}.navlinks a:hover{color:var(--ink)}
+.navcta{display:flex;gap:10px}.btn{display:inline-flex;align-items:center;justify-content:center;height:44px;padding:0 17px;border-radius:12px;border:1px solid var(--line);background:#fff;font-weight:800;font-size:14px;text-decoration:none;transition:.18s ease}
+.btn:hover{transform:translateY(-1px);box-shadow:var(--shadow2)}.btn.dark{background:var(--ink);color:#fff;border-color:var(--ink)}
+.hero{padding:92px 0 66px}.hero-grid{display:grid;grid-template-columns:1.05fr .75fr;gap:72px;align-items:center}
+.kicker{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid var(--line);border-radius:999px;background:#fff;color:#5f645e;font-size:12px;font-weight:800}
+.kicker:before{content:"";width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 0 5px rgba(96,123,90,.10)}
+h1{margin:20px 0 22px;font-size:clamp(50px,7vw,86px);line-height:.98;letter-spacing:-.065em;font-weight:890}
+.hero p{max-width:760px;color:var(--muted);font-size:20px;line-height:1.6;margin:0}.hero-actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:30px}.hero-meta{display:flex;gap:18px;flex-wrap:wrap;margin-top:20px;color:#8b8f88;font-size:13px}
+.device{position:relative;width:min(430px,100%);margin-left:auto}.device:before{content:"";position:absolute;inset:10% -18% 12% 10%;background:radial-gradient(circle at 50% 40%,rgba(181,138,60,.24),rgba(96,123,90,.07) 45%,transparent 72%);filter:blur(22px);z-index:-1}
+.sidebar-shot{border:1px solid var(--line);border-radius:28px;background:#f0ede4;padding:10px;box-shadow:var(--shadow);transform:rotate(1deg)}.sidebar-shot img{width:100%;border-radius:20px;background:#fff}
+.trust{display:flex;justify-content:center;gap:30px;flex-wrap:wrap;padding:16px 0 82px;color:#969990;font-size:13px;text-transform:uppercase;font-weight:850;letter-spacing:.055em}.trust strong{color:#5e625c}
+.section{padding:96px 0}.section.soft{background:#fff;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.section-head{display:grid;grid-template-columns:1fr .85fr;gap:52px;align-items:end;margin-bottom:42px}.eyebrow{text-transform:uppercase;letter-spacing:.1em;font-size:12px;font-weight:850;color:#989b94;margin-bottom:12px}
+h2{margin:0;font-size:clamp(36px,5vw,60px);line-height:1.04;letter-spacing:-.05em}.section-head p{margin:0;color:var(--muted);font-size:17px}
+.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.card{min-height:260px;border:1px solid var(--line);border-radius:22px;background:var(--panel);padding:25px;display:flex;flex-direction:column;justify-content:space-between;transition:.18s ease}.card:hover{transform:translateY(-2px);box-shadow:var(--shadow2)}
+.card.featured{grid-column:span 2;background:var(--ink);color:#fff}.card h3{margin:0 0 8px;font-size:21px;letter-spacing:-.03em}.card.featured h3{font-size:30px}.card p{margin:0;color:var(--muted)}.card.featured p{color:#c5c7c2;max-width:620px}.ico{width:44px;height:44px;border:1px solid var(--line);border-radius:13px;display:grid;place-items:center;background:#fbfaf7;font-weight:900}.featured .ico{background:#22231f;border-color:#32332e;color:#e7d4a4}
+.flow{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-top:34px}.flow div{border:1px solid var(--line);border-radius:14px;padding:16px;background:#fff}.flow b{display:block;font-size:12px;color:var(--gold);letter-spacing:.08em;margin-bottom:6px}.flow span{font-size:14px;font-weight:760}
+.split{display:grid;grid-template-columns:.88fr 1.12fr;gap:62px;align-items:center}.split p{color:var(--muted);font-size:17px}.ticks{display:grid;gap:14px;margin-top:26px}.tick{display:flex;gap:12px;align-items:flex-start;font-weight:730}.tick b{display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--ink);color:#fff;font-size:12px;flex:0 0 22px;margin-top:2px}
+.arch{border:1px solid var(--line);border-radius:24px;background:#fff;padding:26px;box-shadow:var(--shadow2)}.arch-row{display:flex;align-items:center;gap:12px;margin:11px 0}.arch-box{flex:1;border:1px solid var(--line);border-radius:14px;padding:15px;background:#fbfaf7}.arch-box strong{display:block}.arch-box span{font-size:13px;color:var(--muted)}.arrow{color:#aaa;font-weight:900}
+.mode-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:34px}.mode{border:1px solid var(--line);background:#fff;border-radius:18px;padding:22px}.mode h3{margin:0 0 7px;font-size:17px}.mode p{margin:0;color:var(--muted);font-size:14px}
+.security{display:grid;grid-template-columns:1fr 1fr;gap:18px}.sec-card{border:1px solid var(--line);border-radius:22px;padding:28px;background:#fff}.sec-card h3{font-size:25px;margin:0 0 10px;letter-spacing:-.03em}.sec-card p{color:var(--muted);margin:0}.sec-card.safe{background:#eff3ed;border-color:#dce6d8}.sec-card.control{background:#f6f0e4;border-color:#e9dec5}
+.install{display:grid;grid-template-columns:1.1fr .9fr;gap:18px;margin-top:40px}.codebox{border-radius:20px;background:#111311;color:#ecf0ea;padding:24px}.codebar{display:flex;justify-content:space-between;color:#92978f;font-size:12px;margin-bottom:18px}pre{margin:0;white-space:pre-wrap;font:14px/1.7 ui-monospace,SFMono-Regular,Menlo,monospace}
+.install-card{border:1px solid var(--line);border-radius:20px;padding:26px;background:#fff;display:flex;flex-direction:column;justify-content:space-between}.install-card h3{font-size:27px;margin:0 0 8px;letter-spacing:-.03em}.install-card p{color:var(--muted);margin:0 0 22px}
+.faq{display:grid;grid-template-columns:.72fr 1.28fr;gap:56px}.faq-list{display:grid;gap:10px}details{border:1px solid var(--line);border-radius:14px;background:#fff;padding:17px 18px}summary{font-weight:800;cursor:pointer}details p{color:var(--muted);margin:12px 0 0}
+.final{padding:110px 0}.finalbox{position:relative;overflow:hidden;border-radius:30px;background:var(--ink);color:#fff;padding:66px;text-align:center}.finalbox:before{content:"";position:absolute;width:460px;height:460px;border-radius:50%;background:radial-gradient(circle,rgba(181,138,60,.20),transparent 68%);top:-290px;left:50%;transform:translateX(-50%)}.finalbox h2{max-width:800px;margin:0 auto 15px}.finalbox p{color:#c3c7c0;max-width:660px;margin:0 auto 28px;font-size:17px}.finalbox .btn{background:#fff;color:#111;border-color:#fff}
+footer{border-top:1px solid var(--line);padding:34px 0 48px;color:#7b8078;font-size:13px}.footerrow{display:flex;justify-content:space-between;gap:18px;flex-wrap:wrap}.footerlinks{display:flex;gap:18px}
+@media(max-width:900px){.navlinks{display:none}.hero-grid,.section-head,.split,.security,.install,.faq{grid-template-columns:1fr}.device{margin:20px auto 0}.cards{grid-template-columns:1fr 1fr}.card.featured{grid-column:1/-1}.flow,.mode-grid{grid-template-columns:1fr 1fr}}
+@media(max-width:620px){.shell{width:min(100% - 24px,1180px)}.navcta .btn:first-child{display:none}.cards,.flow,.mode-grid{grid-template-columns:1fr}.card.featured{grid-column:auto}h1{font-size:50px}.hero p{font-size:17px}.section{padding:72px 0}.finalbox{padding:46px 24px}}
+</style>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Fatir","applicationCategory":"DeveloperApplication","operatingSystem":"Linux","softwareVersion":"1.1.1","description":"Resident local-first AI desktop assistant for Linux with desktop control, browser automation, Ollama routing, memory, schedules and verification-aware execution.","url":"https://haseebgb92.github.io/Fatir/","codeRepository":"https://github.com/haseebgb92/Fatir","license":"https://opensource.org/licenses/MIT","author":{"@type":"Organization","name":"Advertpreneur"}}
+</script>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[
+{"@type":"Question","name":"What is Fatir?","acceptedAnswer":{"@type":"Answer","text":"Fatir is a resident local-first AI desktop assistant for Linux that can work with desktop apps, the active browser, files, terminal tasks, schedules and persistent context."}},
+{"@type":"Question","name":"Does Fatir run local AI models?","acceptedAnswer":{"@type":"Answer","text":"Yes. Fatir supports local-first routing through Ollama and can escalate to cloud models when configured and when harder reasoning or visual work is needed."}},
+{"@type":"Question","name":"Can Fatir control Linux desktop applications?","acceptedAnswer":{"@type":"Answer","text":"Yes. Fatir uses semantic accessibility through AT-SPI first, then window and keyboard control, with an X11 visual fallback when needed."}},
+{"@type":"Question","name":"Can Fatir automate Chrome?","acceptedAnswer":{"@type":"Answer","text":"Yes. Fatir uses Chrome DevTools MCP for semantic browser automation and can work with a managed browser or the current Chrome session when explicitly requested."}},
+{"@type":"Question","name":"Is Fatir open source?","acceptedAnswer":{"@type":"Answer","text":"Yes. Fatir is published under the MIT License."}}
+]}
+</script>
+</head>
+<body>
+<header class="topbar"><div class="shell nav">
+  <a class="brand" href="#"><img src="images/fatir-mark.png" alt="Fatir logo">Fatir</a>
+  <nav class="navlinks"><a href="#capabilities">Capabilities</a><a href="#architecture">Architecture</a><a href="#security">Security</a><a href="#faq">FAQ</a></nav>
+  <div class="navcta"><a class="btn" href="https://github.com/haseebgb92/Fatir">GitHub</a><a class="btn dark" href="#install">Install</a></div>
+</div></header>
+
+<main>
+<section class="hero"><div class="shell hero-grid">
+  <div>
+    <div class="kicker">Local-first · Linux-native · Open source</div>
+    <h1>An AI assistant that actually lives on your Linux desktop.</h1>
+    <p>Fatir is a resident AI operator for Linux Mint/Cinnamon. It can work with desktop apps, your active browser, terminal tasks, files, memory, schedules, and repeatable workflows — while using deterministic local control before spending model tokens.</p>
+    <div class="hero-actions"><a class="btn dark" href="#install">Install Fatir</a><a class="btn" href="https://github.com/haseebgb92/Fatir">View source</a></div>
+    <div class="hero-meta"><span>MIT licensed</span><span>Rust + Tauri</span><span>Ollama</span><span>Chrome DevTools MCP</span><span>Linux Mint / X11</span></div>
+  </div>
+  <div class="device"><div class="sidebar-shot"><img src="images/fatir-sidebar.png" alt="Fatir resident AI assistant sidebar on Linux"></div></div>
+</div></section>
+
+<div class="shell trust"><span>Built around</span><strong>Linux</strong><strong>Ollama</strong><strong>AT-SPI</strong><strong>Chrome DevTools MCP</strong><strong>Tauri</strong></div>
+
+<section class="section soft" id="capabilities"><div class="shell">
+  <div class="section-head"><div><div class="eyebrow">More operator than chatbot</div><h2>One resident assistant.<br>Across your actual desktop.</h2></div><p>Fatir is designed to stay beside the work instead of pulling the work into another tab. It uses the strongest local control path first and calls a model only when reasoning is actually useful.</p></div>
+
+  <div class="cards">
+    <article class="card featured"><div class="ico">⌁</div><div><h3>Whole-desktop control</h3><p>Operate GTK, Qt, Electron, JetBrains, file managers, utilities, media apps and other Linux software through semantic accessibility first, with keyboard/window and X11 visual fallbacks when needed.</p></div></article>
+    <article class="card"><div class="ico">◎</div><div><h3>Active browser automation</h3><p>Work with the Chrome session and tabs you are already using through Chrome DevTools MCP instead of silently substituting another browser.</p></div></article>
+    <article class="card"><div class="ico">◌</div><div><h3>Local-first model routing</h3><p>Use deterministic tools or local Ollama models for simple work, and escalate only when harder reasoning or vision is justified.</p></div></article>
+    <article class="card"><div class="ico">✓</div><div><h3>Verification-aware execution</h3><p>A click or command is not treated as success by itself. Fatir checks post-action evidence before reporting completion.</p></div></article>
+    <article class="card"><div class="ico">↺</div><div><h3>Memory, schedules & Teach</h3><p>Keep useful context, run background routines, schedule work, and record semantic workflows for repeatable tasks.</p></div></article>
+  </div>
+
+  <div class="flow"><div><b>01</b><span>Understand</span></div><div><b>02</b><span>Plan</span></div><div><b>03</b><span>Act</span></div><div><b>04</b><span>Verify</span></div><div><b>05</b><span>Recover / Complete</span></div></div>
+</div></section>
+
+<section class="section" id="architecture"><div class="shell split">
+  <div>
+    <div class="eyebrow">Local-first architecture</div><h2>Use the cheapest reliable control path first.</h2>
+    <p>Fatir avoids throwing every action at a cloud model. Fast deterministic paths handle what they can, local models route and reason when useful, and cloud escalation is reserved for work that genuinely benefits from it.</p>
+    <div class="ticks"><div class="tick"><b>1</b><span>Fast Path for deterministic built-in tools.</span></div><div class="tick"><b>2</b><span>Local Router for lightweight intent and tool routing.</span></div><div class="tick"><b>3</b><span>Local Deep for heavier local reasoning.</span></div><div class="tick"><b>4</b><span>Optional cloud escalation for difficult visual or reasoning work.</span></div></div>
+  </div>
+  <div class="arch">
+    <div class="arch-row"><div class="arch-box"><strong>You</strong><span>Chat, task, schedule, Teach workflow</span></div></div>
+    <div class="arch-row"><div class="arrow">↓</div></div>
+    <div class="arch-row"><div class="arch-box"><strong>Fatir task engine</strong><span>Understand · plan · verify · recover</span></div></div>
+    <div class="arch-row"><div class="arrow">↓</div></div>
+    <div class="arch-row"><div class="arch-box"><strong>Deterministic / Local / Cloud routing</strong><span>Choose the strongest efficient path</span></div></div>
+    <div class="arch-row"><div class="arrow">↓</div></div>
+    <div class="arch-row"><div class="arch-box"><strong>Linux + Browser surfaces</strong><span>AT-SPI · X11 · terminal · files · Chrome DevTools MCP</span></div></div>
+  </div>
+</div></section>
+
+<section class="section soft"><div class="shell">
+  <div class="section-head"><div><div class="eyebrow">Four working modes</div><h2>Control where the intelligence comes from.</h2></div><p>Fatir can stay strictly local or use cloud reasoning when you explicitly want the extra capability.</p></div>
+  <div class="mode-grid"><div class="mode"><h3>Fast Path</h3><p>Zero-model deterministic actions when a built-in tool can handle the work safely.</p></div><div class="mode"><h3>Local Router</h3><p>Small Ollama model for lightweight intent and tool selection.</p></div><div class="mode"><h3>Local Deep</h3><p>Use a stronger local model for more involved reasoning.</p></div><div class="mode"><h3>Cloud escalation</h3><p>Optional stronger reasoning or visual/browser planning when configured.</p></div></div>
+</div></section>
+
+<section class="section" id="security"><div class="shell">
+  <div class="section-head"><div><div class="eyebrow">Built with boundaries</div><h2>Automation should still know when to ask.</h2></div><p>Fatir keeps consequential actions approval-aware and separates credentials from normal model context instead of treating desktop control as unrestricted automation.</p></div>
+  <div class="security">
+    <div class="sec-card safe"><h3>Secrets stay out of normal model context.</h3><p>Credential values live in Linux Secret Service / keyring. Passwords, OTPs, API keys, recovery codes and payment data are not intentionally placed into prompts or logs.</p></div>
+    <div class="sec-card control"><h3>Consequential actions remain gated.</h3><p>Destructive, privileged, uninstall/remove/wipe and stored-credential actions require explicit approval. Headless browser operation is explicit-only.</p></div>
+  </div>
+</div></section>
+
+<section class="section soft" id="install"><div class="shell">
+  <div class="section-head"><div><div class="eyebrow">Install on Linux</div><h2>Clone it. Run the installer. Keep it beside your work.</h2></div><p>Fatir’s installer provisions its desktop runtime, accessibility tools, launcher integration, PolicyKit/D-Bus support, keyring integration and Tauri build dependencies.</p></div>
+  <div class="install">
+    <div class="codebox"><div class="codebar"><span>Recommended install</span><span>bash</span></div><pre>git clone https://github.com/haseebgb92/Fatir.git
+cd Fatir
+chmod +x install.sh
+./install.sh</pre></div>
+    <div class="install-card"><div><div class="eyebrow">Current public release</div><h3>Fatir v1.1.1</h3><p>Primary target: Linux Mint Cinnamon / X11. MIT licensed and open source.</p></div><a class="btn dark" href="https://github.com/haseebgb92/Fatir">Open GitHub repository</a></div>
+  </div>
+</div></section>
+
+<section class="section" id="faq"><div class="shell faq">
+  <div><div class="eyebrow">FAQ</div><h2>What Fatir is — and what it isn't.</h2></div>
+  <div class="faq-list">
+    <details open><summary>What is Fatir?</summary><p>Fatir is a resident local-first AI desktop assistant for Linux. It works beside your applications rather than acting like an IDE or another full-screen chat app.</p></details>
+    <details><summary>Does Fatir run local AI models?</summary><p>Yes. Fatir supports local-first routing through Ollama and can optionally escalate to configured cloud models for harder reasoning, visual understanding, or browser work.</p></details>
+    <details><summary>Can Fatir control Linux desktop applications?</summary><p>Yes. It prefers semantic AT-SPI controls, then falls back to window/keyboard control and finally X11 visual control where necessary.</p></details>
+    <details><summary>Can Fatir work with my current Chrome tabs?</summary><p>Yes. Its active/current browser mode is intended to attach to the Chrome session you are already using through Chrome DevTools MCP.</p></details>
+    <details><summary>Is Fatir open source?</summary><p>Yes. The project is published under the MIT License.</p></details>
+    <details><summary>Is Fatir an IDE?</summary><p>No. Fatir is a resident sidebar designed to work beside Chrome, Android Studio, Nemo, GIMP, VLC and other Linux applications.</p></details>
+  </div>
+</div></section>
+
+<section class="final"><div class="shell"><div class="finalbox">
+  <h2>Your Linux desktop already has the apps. Fatir gives them an operator.</h2>
+  <p>Local-first where possible, model-assisted where useful, and verification-aware before calling the job done.</p>
+  <div class="hero-actions"><a class="btn" href="#install">Install Fatir</a><a class="btn" href="https://github.com/haseebgb92/Fatir">View source</a></div>
+</div></div></section>
+</main>
+
+<footer><div class="shell footerrow"><div>Fatir · The Originator · MIT License</div><div class="footerlinks"><a href="https://github.com/haseebgb92/Fatir">GitHub</a><a href="https://github.com/haseebgb92/Fatir/blob/main/SECURITY.md">Security</a><a href="https://github.com/haseebgb92/Fatir/issues">Issues</a></div></div></footer>
+</body></html>

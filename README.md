@@ -1,18 +1,26 @@
 <div align="center">
   <img src="ui/assets/fatir-mark.png" alt="Fatir Arabic calligraphy logo" width="120" />
 
-# Fatir
+# Fatir — Local-First AI Desktop Assistant for Linux
 
-**A resident AI assistant for Linux that works beside you — not in another browser tab.**
+**A resident Linux AI operator that works beside you — not in another browser tab.**
 
 Fatir is a light Tauri sidebar for Linux Mint/Cinnamon that can operate desktop apps, work with your active browser session, run terminal tasks, manage files and projects, remember useful context, and learn repeatable workflows.
 
 **Current release:** v1.1.1 · **Primary target:** Linux Mint Cinnamon / X11 · **License:** MIT
+
+[Website](https://haseebgb92.github.io/Fatir/) · [Install](#installation) · [Security](SECURITY.md) · [Architecture](docs/ARCHITECTURE.md) · [Issues](https://github.com/haseebgb92/Fatir/issues)
 </div>
+
+![Fatir local-first AI desktop assistant sidebar](docs/images/fatir-sidebar.png)
 
 ---
 
 ## What Fatir is
+
+**Fatir is a local-first AI desktop assistant for Linux** built as a resident sidebar rather than a separate IDE or browser-only chat app. It combines Linux desktop automation, Chrome browser automation, local Ollama models, persistent memory, schedules, reusable workflows, and verification-aware task execution.
+
+It is designed for people searching for a **Linux AI assistant**, **local AI desktop assistant**, **Ollama desktop agent**, **Linux desktop automation**, or **AI browser automation** solution that can act across the applications they already use.
 
 Fatir lives in the Linux desktop as a resident sidebar. It is designed around one principle: **use the strongest local/deterministic control path first, then involve a model only when reasoning is actually needed.**
 
