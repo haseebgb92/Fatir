@@ -1,3 +1,4 @@
+use crate::models::StoredPending;
 use anyhow::Result;
 use chrono::Utc;
 use serde_json::{json, Value};
@@ -10,6 +11,7 @@ fn data_dir() -> PathBuf {
 fn sessions_path() -> PathBuf { data_dir().join("sessions.json") }
 fn actions_path() -> PathBuf { data_dir().join("actions.jsonl") }
 fn observations_path() -> PathBuf { data_dir().join("observations.jsonl") }
+fn pending_path() -> PathBuf { data_dir().join("pending.json") }
 
 pub fn load_sessions() -> HashMap<String, Vec<Value>> {
     let path = sessions_path();
@@ -21,6 +23,19 @@ pub fn save_sessions(sessions: &HashMap<String, Vec<Value>>) -> Result<()> {
     let tmp = data_dir().join("sessions.json.tmp");
     fs::write(&tmp, serde_json::to_vec(sessions)?)?;
     fs::rename(tmp, sessions_path())?;
+    Ok(())
+}
+
+
+pub fn load_pending() -> HashMap<String, StoredPending> {
+    fs::read_to_string(pending_path()).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default()
+}
+
+pub fn save_pending(pending: &HashMap<String, StoredPending>) -> Result<()> {
+    fs::create_dir_all(data_dir())?;
+    let tmp = data_dir().join("pending.json.tmp");
+    fs::write(&tmp, serde_json::to_vec(pending)?)?;
+    fs::rename(tmp, pending_path())?;
     Ok(())
 }
 

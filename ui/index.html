@@ -220,6 +220,16 @@
         <div id="credentialList" class="credential-list"><div class="activity-empty">No credentials loaded.</div></div>
       </div>
 
+      <div class="setting-block credential-block">
+        <div class="setting-title-row"><div><label>Administrator password</label><p class="help">Optional. Stored only in Linux Secret Service. Fatir can use it for sudo when a Fatir task genuinely needs administrator access. The password is never sent to the AI model or written to logs.</p></div><span class="secure-pill">Local only</span></div>
+        <div class="secret-row">
+          <input id="sudoPassword" type="password" autocomplete="new-password" placeholder="Sudo password" />
+          <button id="saveSudoPassword" type="button">Save</button>
+          <button id="removeSudoPassword" type="button">Remove</button>
+        </div>
+        <p id="sudoPasswordStatus" class="help">Checking administrator credential…</p>
+      </div>
+
       <div class="setting-block learning-block">
         <label>Background learning</label>
         <p class="help learning-copy">Fatir learns routine patterns locally from apps, page URLs/titles and committed shell history. No keystrokes, form fields, passwords or OTPs.</p>
@@ -247,12 +257,8 @@
         <div class="learning-foot"><small id="proactiveStats">Checking proactive status…</small><button id="checkProactive" type="button">Check now</button></div>
       </div>
       <div class="setting-block permission-block">
-        <div class="setting-title-row"><div><label>Approval policy</label><p class="help">Destructive actions, administrator changes and stored credentials always require approval. These preferences only control ordinary reversible work.</p></div><span class="secure-pill">V1</span></div>
-        <label class="toggle-row"><span><strong>Confirm file changes</strong><small>Ask before ordinary create/write/copy/move actions</small></span><input id="confirmFileChanges" type="checkbox" /></label>
-        <label class="toggle-row"><span><strong>Confirm shell commands</strong><small>Ask before arbitrary terminal commands</small></span><input id="confirmShellCommands" type="checkbox" /></label>
-        <label class="toggle-row"><span><strong>Confirm background jobs</strong><small>Ask before starting/stopping persistent local jobs</small></span><input id="confirmBackgroundJobs" type="checkbox" /></label>
-        <label class="toggle-row"><span><strong>Confirm routine metadata</strong><small>Ask before saving/removing workflow metadata</small></span><input id="confirmAutomationMetadata" type="checkbox" /></label>
-        <div class="learning-foot"><small id="permissionStats">Loading permission policy…</small></div>
+        <div class="setting-title-row"><div><label>Approval policy</label><p class="help">Fatir runs normal file, browser, desktop, terminal, background-job and administrator tasks autonomously. It asks only before software installation, software uninstallation, or permanently emptying Trash.</p></div><span class="secure-pill">Autonomous</span></div>
+        <div class="learning-foot"><small id="permissionStats">Only install, uninstall and Empty Trash require approval.</small></div>
       </div>
       <div class="setting-row"><div><strong>Local Fatir data</strong><small>Memory, tasks, jobs, rollback history and learned routine</small></div><button id="openData">Open</button></div>
       <div class="setting-row danger-row"><div><strong>Remove cloud key</strong><small>Switch back to local Ollama authentication</small></div><button id="clearKey">Remove</button></div>

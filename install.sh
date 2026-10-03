@@ -212,11 +212,11 @@ if command -v ollama >/dev/null 2>&1; then
   fi
 fi
 
-echo "[5/9] Validating Fatir v1.1.1 source…"
+echo "[5/9] Validating Fatir v1.3.2 source…"
 cd "$ROOT"
 ./scripts/validate.sh
 
-echo "[6/9] Building Fatir v1.1.1…"
+echo "[6/9] Building Fatir v1.3.2…"
 echo "       Shared Cargo cache: $CARGO_TARGET_DIR"
 cargo metadata --manifest-path "$ROOT/src-tauri/Cargo.toml" --no-deps --format-version 1 >/dev/null
 cargo tauri build --bundles deb
@@ -302,7 +302,7 @@ cat > "$HOME/.config/autostart/fatir.desktop" <<EOF2
 Type=Application
 Name=Fatir Personal Assistant
 Comment=Resident personal assistant
-Exec=fatir --background
+Exec=fatir-core --background
 X-GNOME-Autostart-enabled=true
 OnlyShowIn=X-Cinnamon;
 NoDisplay=true
@@ -311,13 +311,13 @@ EOF2
 echo "[9/9] Starting Fatir…"
 pkill -x ah-pa 2>/dev/null || true
 pkill -x fatir 2>/dev/null || true
-nohup fatir --background >"$HOME/.cache/fatir.log" 2>&1 &
+nohup fatir-core --background >"$HOME/.cache/fatir-core.log" 2>&1 &
 sleep 1
 fatir >/dev/null 2>&1 &
 
 echo
 echo "=========================================="
-echo " Fatir v1.1.1 is installed"
+echo " Fatir v1.3.2 is installed"
 echo "=========================================="
 echo
 printf '%s\n' \

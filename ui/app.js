@@ -768,6 +768,19 @@ async function createEmailDraft(){
   shareSetStatus(`Creating Gmail draft for ${to}…`,'working');
   try{await invoke('share_email_draft',{paths:sharePaths,to,subject});shareSetStatus('Gmail draft is open with the files attached. Review it in the Fatir browser before sending.','success');await refreshShareHistory();}catch(e){shareSetStatus(String(e),'error')}
 }
+
+const surfacedPendingApprovals=new Set();
+async function checkPendingApprovals(){
+  try{
+    const items=await invoke('pending_actions');
+    for(const p of (items||[])){
+      if(!p?.id||surfacedPendingApprovals.has(p.id))continue;
+      surfacedPendingApprovals.add(p.id);
+      addAssistant({text:'A background Fatir task reached a step that requires your approval.',model:'background core',trace:[],pending:p});
+    }
+  }catch(e){console.warn('Could not load pending background approvals',e)}
+}
+
 async function checkPendingShare(){
   try{const paths=await invoke('share_pending');if(paths?.length)await openShare(paths);}catch{}
 }
@@ -861,21 +874,23 @@ document.addEventListener('keydown',e=>{
 const modal=$('#settingsModal');
 async function refreshPermissions(){
   try{
-    const p=await invoke('permission_status'); const c=p.config||{};
-    $('#confirmFileChanges').checked=!!c.confirm_file_changes;
-    $('#confirmShellCommands').checked=!!c.confirm_shell_commands;
-    $('#confirmBackgroundJobs').checked=!!c.confirm_background_jobs;
-    $('#confirmAutomationMetadata').checked=!!c.confirm_automation_metadata;
-    $('#permissionStats').textContent='Destructive, administrator and credential actions always ask.';
-  }catch(e){ $('#permissionStats').textContent=`Permission policy unavailable: ${String(e)}`; }
+    const p=await invoke('permission_status');
+    const always=(p.always_confirm||[]).join(', ');
+    $('#permissionStats').textContent=always ? ('Always asks: '+always+'.') : 'Only install, uninstall and Empty Trash require approval.';
+  }catch(e){ $('#permissionStats').textContent='Only install, uninstall and Empty Trash require approval.'; }
 }
-async function savePermissions(){
-  const config={confirm_file_changes:$('#confirmFileChanges').checked,confirm_shell_commands:$('#confirmShellCommands').checked,confirm_background_jobs:$('#confirmBackgroundJobs').checked,confirm_automation_metadata:$('#confirmAutomationMetadata').checked};
-  try{await invoke('set_permission_config',{config});await refreshPermissions();}catch(e){addError(e)}
-}
-['confirmFileChanges','confirmShellCommands','confirmBackgroundJobs','confirmAutomationMetadata'].forEach(id=>$('#'+id)?.addEventListener('change',savePermissions));
 
-$('#settingsBtn').onclick=()=>{modal.classList.remove('hidden');refreshPanelLayout();refreshStatus();refreshObserver();refreshAdaptive();refreshCredentials();refreshProactiveSettings();refreshPermissions()};
+async function refreshSudoCredential(){
+  try{
+    const s=await invoke('sudo_credential_status');
+    $('#sudoPasswordStatus').textContent=s.stored
+      ? 'Administrator password is stored securely in Linux keyring. Fatir can use it for privileged tasks.'
+      : 'No administrator password stored. Privileged tasks will fall back to the normal Linux PolicyKit prompt.';
+    $('#removeSudoPassword').disabled=!s.stored;
+  }catch(e){ $('#sudoPasswordStatus').textContent='Administrator credential status unavailable.'; }
+}
+
+$('#settingsBtn').onclick=()=>{modal.classList.remove('hidden');refreshPanelLayout();refreshStatus();refreshObserver();refreshAdaptive();refreshCredentials();refreshProactiveSettings();refreshPermissions();refreshSudoCredential()};
 $('#closeSettings').onclick=()=>modal.classList.add('hidden');
 modal.addEventListener('click',e=>{if(e.target===modal)modal.classList.add('hidden')});
 $('#saveKey').onclick=async()=>{const key=$('#apiKey').value.trim();if(!key)return;try{await invoke('save_api_key',{key});$('#apiKey').value='';await refreshStatus()}catch(e){addError(e)}};
@@ -897,6 +912,14 @@ $('#saveCredential')?.addEventListener('click',async()=>{
   if(!label||!secret){addNotice('Credential label and secret are required.');return;}
   try{await invoke('credential_store',{label,account,secret});$('#credLabel').value='';$('#credAccount').value='';$('#credSecret').value='';await refreshCredentials();addNotice('Credential stored in Linux keyring.');}catch(e){addError(e)}
 });
+$('#saveSudoPassword')?.addEventListener('click',async()=>{
+  const secret=$('#sudoPassword').value;
+  if(!secret){addNotice('Enter your sudo password first.');return;}
+  try{await invoke('sudo_credential_store',{secret});$('#sudoPassword').value='';await refreshSudoCredential();addNotice('Administrator password stored securely in Linux keyring.');}catch(e){addError(e)}
+});
+$('#removeSudoPassword')?.addEventListener('click',async()=>{
+  try{await invoke('sudo_credential_remove');$('#sudoPassword').value='';await refreshSudoCredential();addNotice('Administrator password removed from Linux keyring.');}catch(e){addError(e)}
+});
 setInterval(refreshRunBadge,15000);
 setInterval(refreshDashboard,60000);
 
@@ -906,10 +929,14 @@ refreshPanelLayout();
 refreshStatus();
 refreshObserver();
 refreshAdaptive();
+refreshPermissions();
+refreshSudoCredential();
 refreshDashboard();
 refreshRunBadge();
 refreshPin();
 refreshComputerControl();
 checkPendingShare();
+checkPendingApprovals();
 setInterval(checkPendingShare,1200);
+setInterval(checkPendingApprovals,5000);
 composer.focus();

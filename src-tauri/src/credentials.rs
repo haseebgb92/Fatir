@@ -19,3 +19,42 @@ pub fn store(label:&str,account:&str,secret:&str)->Result<Value>{if label.trim()
 pub fn list()->Result<Vec<Value>>{Ok(load().into_iter().map(|x|serde_json::to_value(x).unwrap_or(Value::Null)).collect())}
 pub fn remove(id:&str)->Result<()> {let mut items=load();let meta=items.iter().find(|x|x.id==id).cloned().ok_or_else(||anyhow!("Credential not found"))?;if let Ok(e)=Entry::new(&service(id),key_user(&meta.account)){let _=e.delete_credential();}if let Ok(e)=Entry::new(&legacy_service(id),key_user(&meta.account)){let _=e.delete_credential();}items.retain(|x|x.id!=id);save(&items)?;Ok(())}
 pub fn secret(id:&str)->Result<String>{let meta=load().into_iter().find(|x|x.id==id).ok_or_else(||anyhow!("Credential not found"))?;if let Ok(e)=Entry::new(&service(id),key_user(&meta.account)){if let Ok(secret)=e.get_password(){return Ok(secret);}}let secret=Entry::new(&legacy_service(id),key_user(&meta.account))?.get_password()?;if let Ok(e)=Entry::new(&service(id),key_user(&meta.account)){let _=e.set_password(&secret);}Ok(secret)}
+
+const SUDO_SERVICE: &str = "Fatir";
+const SUDO_ACCOUNT: &str = "sudo_password";
+const LEGACY_SUDO_SERVICE: &str = "Fatir/admin";
+const LEGACY_SUDO_ACCOUNT: &str = "sudo";
+
+pub fn store_sudo(secret:&str)->Result<Value>{
+    if secret.is_empty(){return Err(anyhow!("Administrator password is required"));}
+    let entry=Entry::new(SUDO_SERVICE,SUDO_ACCOUNT)?;
+    entry.set_password(secret)?;
+    // Verify the same Secret Service slot can be read back before claiming success.
+    let verified=entry.get_password().map(|v|!v.is_empty()).unwrap_or(false);
+    if !verified { return Err(anyhow!("Administrator password was written but could not be read back from Linux keyring")); }
+    // Remove the temporary v1.2.0 legacy slot if it exists.
+    if let Ok(old)=Entry::new(LEGACY_SUDO_SERVICE,LEGACY_SUDO_ACCOUNT){let _=old.delete_credential();}
+    Ok(serde_json::json!({"stored":true,"verified":true,"service":"linux-keyring","kind":"sudo"}))
+}
+
+pub fn sudo_secret()->Result<String>{
+    if let Ok(entry)=Entry::new(SUDO_SERVICE,SUDO_ACCOUNT){
+        if let Ok(secret)=entry.get_password(){
+            if !secret.is_empty(){return Ok(secret);}
+        }
+    }
+    // Migrate any password saved by the first 1.2.0 build.
+    let old=Entry::new(LEGACY_SUDO_SERVICE,LEGACY_SUDO_ACCOUNT)?.get_password()?;
+    if old.is_empty(){return Err(anyhow!("Administrator password is not stored"));}
+    Entry::new(SUDO_SERVICE,SUDO_ACCOUNT)?.set_password(&old)?;
+    if let Ok(legacy)=Entry::new(LEGACY_SUDO_SERVICE,LEGACY_SUDO_ACCOUNT){let _=legacy.delete_credential();}
+    Ok(old)
+}
+
+pub fn has_sudo()->bool{sudo_secret().map(|s|!s.is_empty()).unwrap_or(false)}
+
+pub fn remove_sudo()->Result<()> {
+    if let Ok(e)=Entry::new(SUDO_SERVICE,SUDO_ACCOUNT){let _=e.delete_credential();}
+    if let Ok(e)=Entry::new(LEGACY_SUDO_SERVICE,LEGACY_SUDO_ACCOUNT){let _=e.delete_credential();}
+    Ok(())
+}

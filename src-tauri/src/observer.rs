@@ -21,7 +21,7 @@ impl Default for ObserverConfig {
             active_apps: true,
             browser_history: true,
             terminal_history: true,
-            sample_seconds: 8,
+            sample_seconds: 15,
         }
     }
 }
@@ -167,7 +167,7 @@ pub async fn run_forever() {
 
     loop {
         let config = load_config();
-        let delay = config.sample_seconds.clamp(5, 60);
+        let delay = config.sample_seconds.clamp(15, 120);
         if config.enabled {
             if config.active_apps {
                 if let Some(event) = active_window().await {

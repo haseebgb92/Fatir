@@ -39,7 +39,7 @@ pub struct AgentResponse {
     pub pending: Option<PendingAction>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StoredPending {
     pub id: String,
     pub session_id: String,

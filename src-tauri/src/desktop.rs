@@ -1,8 +1,8 @@
 use crate::pointer;
 use anyhow::{anyhow, Context, Result};
 use serde_json::{json, Value};
-use std::{fs, path::PathBuf};
-use tokio::process::Command;
+use std::{fs, path::PathBuf, process::Stdio};
+use tokio::{io::AsyncWriteExt, process::Command};
 use uuid::Uuid;
 
 fn data_dir() -> PathBuf {
@@ -67,6 +67,7 @@ const LOCAL_RUNTIME_COMMANDS: &[(&str, &str)] = &[
     ("update-desktop-database", "launcher database refresh"),
     ("notify-send", "desktop notifications"),
     ("pkexec", "PolicyKit privilege elevation"),
+    ("sudo", "keyring-backed administrator command elevation"),
     ("flatpak", "Flatpak application discovery/install"),
     ("dpkg-query", "APT package state inspection"),
     ("dpkg-deb", "local DEB metadata inspection"),
@@ -286,6 +287,32 @@ def matches(items,query,role=''):
     scored.sort(key=lambda x:(-x[0],len(x[1].get('path') or '')))
     return [dict(item,match_score=score) for score,item in scored]
 
+def collect_text(root,limit=12000):
+    chunks=[]
+    total=0
+    def rec(obj,depth):
+        nonlocal total
+        if depth>10 or total>=limit:return
+        try:
+            states=[x.lower() for x in state_names(obj)]
+            if 'protected' not in states:
+                t=obj.queryText()
+                value=t.getText(0,t.characterCount)
+                if value:
+                    value=value[-4000:]
+                    chunks.append(value)
+                    total+=len(value)
+        except: pass
+        try:n=obj.childCount
+        except:n=0
+        for i in range(min(n,120)):
+            if total>=limit:return
+            try:child=obj.getChildAtIndex(i)
+            except:continue
+            if child:rec(child,depth+1)
+    rec(root,0)
+    return '\n'.join(chunks)[-limit:]
+
 def perform_action(obj):
     preferred=['click','press','activate','toggle','open','select']
     a=obj.queryAction(); names=[a.getName(i).lower() for i in range(a.nActions)]
@@ -300,6 +327,7 @@ def main():
     w=find_window(title)
     if not w: print(json.dumps({'error':'Window not found'})); sys.exit(3)
     if op=='elements': print(json.dumps({'window':(w.name or ''),'elements':walk(w)})); return
+    if op=='window_text': print(json.dumps({'window':(w.name or ''),'text':collect_text(w)})); return
     if op=='find':
         query=sys.argv[3] if len(sys.argv)>3 else ''; role=sys.argv[4] if len(sys.argv)>4 else ''
         print(json.dumps({'window':(w.name or ''),'query':query,'matches':matches(walk(w),query,role)[:25]})); return
@@ -416,20 +444,21 @@ pub async fn apps(query: Option<&str>, limit: usize) -> Result<Value> {
 }
 
 async fn x11_windows() -> Vec<Value> {
-    let Ok(out)=Command::new("wmctrl").arg("-lxG").output().await else { return vec![]; };
+    let Ok(out)=Command::new("wmctrl").arg("-lpGx").output().await else { return vec![]; };
     if !out.status.success() { return vec![]; }
     let mut rows=Vec::new();
     for line in String::from_utf8_lossy(&out.stdout).lines() {
         let fields=line.split_whitespace().collect::<Vec<_>>();
-        if fields.len()<9 { continue; }
+        if fields.len()<10 { continue; }
         let parse_i=|i:usize| fields.get(i).and_then(|x|x.parse::<i64>().ok()).unwrap_or(0);
         rows.push(json!({
             "window_id":fields[0],
             "desktop":fields[1],
-            "bounds":{"x":parse_i(2),"y":parse_i(3),"width":parse_i(4),"height":parse_i(5)},
-            "host":fields[6],
-            "wm_class":fields[7],
-            "title":fields[8..].join(" "),
+            "pid":parse_i(2),
+            "bounds":{"x":parse_i(3),"y":parse_i(4),"width":parse_i(5),"height":parse_i(6)},
+            "host":fields[7],
+            "wm_class":fields[8],
+            "title":fields[9..].join(" "),
             "source":"x11"
         }));
     }
@@ -663,6 +692,7 @@ pub async fn windows() -> Result<Value> {
                 obj.insert("x11".into(),x.clone());
                 obj.insert("window_id".into(),x.get("window_id").cloned().unwrap_or(Value::Null));
                 obj.insert("wm_class".into(),x.get("wm_class").cloned().unwrap_or(Value::Null));
+                obj.insert("pid".into(),x.get("pid").cloned().unwrap_or(Value::Null));
             }
         } else {
             rows.push(json!({
@@ -672,6 +702,7 @@ pub async fn windows() -> Result<Value> {
                 "semantic":false,
                 "source":"x11",
                 "window_id":x.get("window_id").cloned().unwrap_or(Value::Null),
+                "pid":x.get("pid").cloned().unwrap_or(Value::Null),
                 "wm_class":class,
                 "bounds":x.get("bounds").cloned().unwrap_or(Value::Null)
             }));
@@ -680,6 +711,7 @@ pub async fn windows() -> Result<Value> {
     Ok(json!({"windows":rows,"note":"Merged AT-SPI and X11 windows. semantic=false means use keyboard/visual fallback rather than assuming the app is uncontrollable."}))
 }
 pub async fn elements(window: &str) -> Result<Value> { py(&["elements", window]).await }
+pub async fn window_text(window: &str) -> Result<Value> { py(&["window_text", window]).await }
 pub async fn find(window: &str, query: &str, role: Option<&str>) -> Result<Value> { py(&["find", window, query, role.unwrap_or("")]).await }
 async fn point_at_path(window: &str, path: &str, label: &str) -> Result<()> {
     pointer::ensure_enabled()?;
@@ -717,6 +749,27 @@ pub async fn set_text(window: &str, path: &str, text: &str) -> Result<Value> {
 pub async fn set_secret_text(window: &str, path: &str, text: &str) -> Result<Value> {
     point_at_path(window,path,"Fatir · Secure field").await?;
     py(&["setsecret", window, path, text]).await
+}
+
+pub async fn type_secret_to_window(window: &str, text: &str) -> Result<Value> {
+    if window.trim().is_empty() { return Err(anyhow!("Window is required")); }
+    focus_window(window).await?;
+    tokio::time::sleep(std::time::Duration::from_millis(120)).await;
+    let mut child = Command::new("xdotool")
+        .args(["type","--clearmodifiers","--delay","1","--file","-"])
+        .stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::piped())
+        .spawn().context("Could not start secure xdotool typing")?;
+    if let Some(mut stdin)=child.stdin.take(){
+        stdin.write_all(text.as_bytes()).await?;
+        stdin.shutdown().await?;
+    }
+    let out=child.wait_with_output().await?;
+    if !out.status.success(){
+        return Err(anyhow!("Could not type secret into {}: {}",window,String::from_utf8_lossy(&out.stderr)));
+    }
+    let st=Command::new("xdotool").args(["key","--clearmodifiers","Return"]).status().await?;
+    if !st.success(){return Err(anyhow!("Could not submit secret in {}",window));}
+    Ok(json!({"ok":true,"window":window,"secret":"[not exposed]","transport":"stdin"}))
 }
 pub async fn get_text(window: &str, path: &str) -> Result<Value> { py(&["get_text", window, path]).await }
 

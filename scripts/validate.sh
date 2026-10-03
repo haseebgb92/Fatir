@@ -18,8 +18,8 @@ tauri_conf=json.loads((root/'src-tauri/tauri.conf.json').read_text())
 json.loads((root/'src-tauri/capabilities/default.json').read_text())
 json.loads((root/'cinnamon-applet/fatir@local/metadata.json').read_text())
 cargo=tomllib.loads((root/'src-tauri/Cargo.toml').read_text())
-assert cargo['package']['version']=='1.1.1'
-assert tauri_conf.get('version')=='1.1.1', 'Tauri bundle version mismatch'
+assert cargo['package']['version']=='1.3.2'
+assert tauri_conf.get('version')=='1.3.2', 'Tauri bundle version mismatch'
 assert (root/'src-tauri/src/adaptive.rs').exists()
 assert (root/'src-tauri/src/browser_memory.rs').exists()
 assert (root/'src-tauri/src/teach.rs').exists()
@@ -88,7 +88,7 @@ assert 'FATIR V1 VERIFICATION GATE' in orchestrator and 'verification_debt' in o
 assert 'FATIR V1 RECOVERY' in recovery and 'failed_calls' in ollama, 'V1 recovery/loop guard missing'
 assert 'KNOWN LOCAL PROJECTS' in projects and 'git_branch' in projects, 'Project continuity missing'
 assert 'PERSISTENT TERMINAL SESSIONS' in terminal and 'TerminalSession' in terminal, 'Persistent terminal continuity missing'
-assert 'always_confirm' in permissions and 'destructive actions' in permissions, 'Permission policy invariant missing'
+assert 'always_confirm' in permissions and 'software installation' in permissions and 'permanently emptying Trash' in permissions, 'Autonomous permission policy invariant missing'
 assert 'Teach Mode 3.0' in teach and 'verify_with' in teach, 'Teach Mode 3.0 verification metadata missing'
 playbooks=(root/'src-tauri/src/app_playbooks.rs').read_text()
 for family in ('android studio','nemo','gimp','krita','libreoffice','vlc','calculator','system settings','archive manager'):
@@ -97,7 +97,7 @@ assert 'LOCAL ACTION MEMORY' in (root/'src-tauri/src/memory.rs').read_text(), 'C
 assert 'V1 multi-step task completion requires a verification checkpoint with evidence' in (root/'src-tauri/src/tasks.rs').read_text() and 'checkpoints' in (root/'src-tauri/src/tasks.rs').read_text(), 'V1 task checkpoint engine missing'
 ui=(root/'ui/index.html').read_text(); appjs=(root/'ui/app.js').read_text()
 assert 'Fatir V1' in ui and 'opsProjects' in ui and 'opsRuntime' in ui, 'V1 Command Center UI missing'
-assert 'confirmFileChanges' in ui and 'refreshPermissions' in appjs, 'V1 permission controls missing'
+assert 'sudoPassword' in ui and 'refreshPermissions' in appjs and 'refreshSudoCredential' in appjs, 'Autonomous approval and sudo credential controls missing'
 assert (root/'ui/assets/fatir-mark.png').is_file(), 'Arabic calligraphy sidebar mark missing'
 assert (root/'cinnamon-applet/fatir@local/icon.png').is_file(), 'Cinnamon calligraphy icon missing'
 assert 'assets/fatir-mark.png' in ui and 'closePanelBtn' in ui, 'V1.1 sidebar brand/hide controls missing'
@@ -105,7 +105,7 @@ assert 'panelSide' in ui and 'panelWidth' in ui, 'V1.1 sidebar layout settings m
 assert "invoke('set_panel_layout'" in appjs and "invoke('hide_panel')" in appjs, 'V1.1 panel layout/hide integration missing'
 main_src=(root/'src-tauri/src/main.rs').read_text()
 assert 'fn set_panel_layout(' in main_src and 'fn hide_panel(' in main_src and 'apply_panel_layout' in main_src, 'V1.1 native panel layout commands missing'
-assert tauri_conf['app']['windows'][0]['width']==420 and tauri_conf['app']['windows'][0]['minWidth']==360, 'V1.1 sidebar window sizing regressed'
+assert tauri_conf['app']['windows']==[] and '.inner_size(420.0, 780.0)' in main_src and '.min_inner_size(360.0, 520.0)' in main_src, 'v1.3 on-demand sidebar sizing/window lifecycle regressed'
 styles=(root/'ui/styles.css').read_text()
 assert 'v1.1 — Noor sidebar shell' in styles and '--accent:#b98630' in styles, 'V1.1 light/gold visual shell missing'
 applet=(root/'cinnamon-applet/fatir@local/applet.js').read_text()
@@ -183,8 +183,8 @@ assert 'persistent local schedule(s)' in ui, 'V1 Command Center schedule status 
 
 install=(root/'install.sh').read_text()
 assert 'NODE_MAJOR == 22 && NODE_MINOR >= 12' in install, 'Installer must enforce Chrome DevTools MCP Node 22.12+ compatibility'
-assert 'Building Fatir v1.1.1' in install, 'Installer version label mismatch'
-assert './scripts/validate.sh' in install and 'Validating Fatir v1.1.1 source' in install, 'Installer must run source validation before Cargo build'
+assert 'Building Fatir v1.3.2' in install, 'Installer version label mismatch'
+assert './scripts/validate.sh' in install and 'Validating Fatir v1.3.2 source' in install, 'Installer must run source validation before Cargo build'
 assert '[9/9] Starting Fatir' in install and '[1/8]' not in install and '[8/8]' not in install, 'V1 installer progress numbering must be internally consistent'
 assert 'chrome-devtools-mcp@${MCP_VERSION}' in install, 'Installer must provision Chrome DevTools MCP'
 assert 'setup_22.x' in install, 'Installer must ensure compatible Node.js for MCP'
@@ -198,7 +198,7 @@ assert 'Chrome DevTools MCP' in security and 'Headless browser tools are opt-in 
 assert 'V1 execution and verification' in security and 'Local schedules' in security, 'Security model must document V1 verification and schedule boundaries'
 permissions_src=(root/'src-tauri/src/permissions.rs').read_text()
 assert 'confirm_shell_commands:false' in permissions_src, 'Routine user-level shell commands should be low-friction by default in V1'
-assert 'shell_command_risk' in tools and 'run_shell_with_credentials" => "sensitive"' in tools, 'Shell approvals must be risk-aware and credential commands always sensitive'
+assert 'shell_command_risk' in tools and 'return "install"' in tools and 'empty-trash' in tools, 'Shell approvals must gate installation/uninstallation and permanent Trash emptying'
 assert 'sudo or pkexec' in tools, 'Ordinary shell execution must not bypass the privileged PolicyKit tool'
 
 setup=(root/'scripts/setup-desktop-access.sh').read_text()
@@ -252,7 +252,7 @@ all_rust='\n'.join(x.read_text() for x in (root/'src-tauri/src').glob('*.rs'))
 rust_commands=set(re.findall(r'(?:std::process::)?Command::new\(\"([^\"]+)\"\)', all_rust))
 desktop=(root/'src-tauri/src/desktop.rs').read_text()
 declared_commands=set(re.findall(r'\(\"([^\"]+)\", \"[^\"]+\"\)', desktop[desktop.index('const LOCAL_RUNTIME_COMMANDS'):desktop.index('];', desktop.index('const LOCAL_RUNTIME_COMMANDS'))]))
-allowed_implicit={'bash','/bin/bash','sh','flameshot'}
+allowed_implicit={'bash','/bin/bash','sh','flameshot','fatir-core'}
 undeclared=sorted(rust_commands-declared_commands-allowed_implicit)
 assert not undeclared, f'Rust external commands missing from LOCAL_RUNTIME_COMMANDS: {undeclared}'
 for needle in ('pub async fn doctor()', 'pub async fn repair_accessibility()', 'pub async fn apps(', 'pub async fn windows()', 'pub async fn capabilities(', 'pub async fn visual_action(', 'python3-pyatspi', 'libatk-wrapper-java-jni', 'desktop-file-utils', 'dbus-x11', 'gnome-keyring', 'LOCAL_RUNTIME_COMMANDS', 'missing_runtime_commands', 'secret_service_ready', 'credential_keyring_ready', 'ide.support.screenreaders.enabled=true', '-Djavax.accessibility.assistive_technologies=org.GNOME.Accessibility.AtkWrapper', 'pub async fn key(', 'pub async fn type_text('):
@@ -264,7 +264,7 @@ assert 'QT_ACCESSIBILITY' in desktop and 'ACCESSIBILITY_ENABLED' in desktop, 'Fa
 assert 'Command::new("scrot").args(["-u"' in desktop, 'Desktop observe must have scrot screenshot fallback'
 assert 'command_available("gnome-screenshot").await || command_available("scrot").await' in desktop, 'Desktop readiness must accept either screenshot backend'
 assert 'Command::new("scrot").arg(file.to_string_lossy().as_ref())' in tools, 'General screenshot tool must have scrot fallback'
-assert 'desktop_activate_named" | "desktop_visual_action" | "desktop_key' in tools, 'Desktop destructive-intent risk gate missing'
+assert 'desktop_action_risk' in tools and '"auto"' in tools and 'empty-trash' in tools, 'Desktop autonomy policy missing'
 assert 'apt-get install -y python3-atspi' not in desktop and '"python3-atspi",' not in desktop, 'Desktop code must not install the nonexistent python3-atspi package'
 m=re.search(r'const PY: &str = r#"\n(.*?)\n"#;', desktop, re.S)
 if not m:
@@ -276,7 +276,7 @@ if not pm:
     raise SystemExit('Could not locate embedded virtual pointer helper')
 compile(pm.group(1), 'fatir_pointer_overlay.py', 'exec')
 
-# v1.1.1 Command Center must be a full-height sidebar workspace, not the legacy bottom sheet.
+# v1.3.2 Command Center must be a full-height sidebar workspace, not the legacy bottom sheet.
 assert '#opsSheet{align-items:stretch' in styles, 'Command Center must align from the top/full height'
 assert '#opsSheet .command-center{height:100%;max-height:none' in styles, 'Command Center card must fill the sheet height'
 assert '#opsSheet .ops-panel{flex:1 1 auto;min-height:0;overflow-y:auto' in styles, 'Command Center content must scroll inside the panel'

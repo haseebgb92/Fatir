@@ -17,18 +17,17 @@ pub fn load()->PermissionConfig{fs::read_to_string(path()).ok().and_then(|s|serd
 pub fn save(c:&PermissionConfig)->Result<()>{fs::create_dir_all(data_dir())?;let tmp=data_dir().join("permissions.json.tmp");fs::write(&tmp,serde_json::to_vec_pretty(c)?)?;fs::rename(tmp,path())?;Ok(())}
 
 pub fn requires_approval(risk:&str,tool:&str)->bool{
-    if risk=="auto"{return false;}
-    if matches!(risk,"destructive"|"system"|"sensitive"){return true;}
-    let c=load();
-    if matches!(tool,"write_text_file"|"copy_file"|"move_path"|"create_directory"){return c.confirm_file_changes;}
-    if matches!(tool,"background_job_start"|"background_job_cancel"|"scheduled_job_create"|"scheduled_job_cancel"){return c.confirm_background_jobs;}
-    if matches!(tool,"routine_capture_recent"|"routine_remove"|"project_forget"|"terminal_session_close"){return c.confirm_automation_metadata;}
-    if matches!(tool,"run_shell_command"|"terminal_session_exec"|"run_shell_with_credentials"){return c.confirm_shell_commands;}
-    true
+    matches!(risk,"install"|"uninstall"|"empty-trash") ||
+    matches!(tool,
+        "install_apt" | "install_flatpak" | "install_deb" | "desktop_repair_accessibility" |
+        "uninstall_apt" | "uninstall_flatpak" | "uninstall_snap" |
+        "empty_trash"
+    )
 }
 
 pub fn status()->Value{let c=load();json!({
     "config":c,
-    "always_confirm":["destructive actions","privileged/system changes","stored credential use"],
-    "never_bypass":"Delete/uninstall/erase/format, PolicyKit/root changes, credentials and purchases remain approval-gated regardless of preferences."
+    "always_confirm":["software installation","software uninstallation","permanently emptying Trash"],
+    "autonomy":"All other supported Fatir actions run without redundant approval and still retain verification/rollback where available.",
+    "never_bypass":"Installation, uninstallation and permanently emptying Trash always require explicit approval."
 })}

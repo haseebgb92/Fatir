@@ -1,0 +1,55 @@
+name: Build Linux package
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  linux-deb:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential curl file pkg-config libssl-dev \
+            libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev \
+            libxdo-dev policykit-1 poppler-utils unzip xdg-utils \
+            python3 python3-pyatspi at-spi2-core libnotify-bin \
+            libgtk-3-bin libglib2.0-bin
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version '^2' --locked
+
+      - name: Validate source
+        run: ./scripts/validate.sh
+
+      - name: Cargo check
+        working-directory: src-tauri
+        run: cargo check
+
+      - name: Build deb
+        run: cargo tauri build --bundles deb
+
+      - name: Upload deb
+        uses: actions/upload-artifact@v4
+        with:
+          name: Fatir-linux-amd64-deb
+          path: src-tauri/target/release/bundle/deb/*.deb
+          if-no-files-found: error

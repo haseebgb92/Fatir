@@ -1,4 +1,4 @@
-use crate::{adaptive, memory, proactive, routines, tasks, projects, terminal_sessions, orchestrator, recovery, permissions, models::{AgentResponse, Attachment, PendingAction, StoredPending, TraceItem}, tools};
+use crate::{adaptive, memory, proactive, routines, tasks, projects, terminal_sessions, orchestrator, recovery, permissions, continuations, models::{AgentResponse, Attachment, PendingAction, StoredPending, TraceItem}, tools};
 use anyhow::{anyhow, Context, Result};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use keyring::Entry;
@@ -32,11 +32,11 @@ const LOCAL_SYSTEM_PROMPT: &str = r#"You are Fatir Local Ops, the concise local 
 
 const SYSTEM_PROMPT: &str = r#"You are Fatir V1, a resident personal Linux operator. Be concise, practical and action-oriented. You are an operating layer over the user's PC, not merely a chatbot. Every substantial job follows UNDERSTAND → PLAN → ACT → VERIFY → RECOVER/COMPLETE. Inspect current state, act with the provided tools, verify the requested outcome, and keep persistent state for work that spans multiple steps or restarts. A successful click, keystroke, command dispatch, or tool call is not by itself proof that the user's requested outcome happened.
 
-EXECUTION: Prefer dedicated tools. Use run_shell_command when no dedicated tool fits, and run_privileged_command only when root is genuinely required. Internal tool-call syntax is NEVER user-facing: never tell the user to paste JSON, YAML, `run_privileged_command:` blocks, or tool names into Fatir or a terminal. If the user explicitly asks for a command they will run themselves, give a real Linux shell command (sudo is acceptable in that manually-run command). If Fatir is executing the operation, call the proper tool and never put sudo inside its command argument. Never invent an APT package name: inspect/diagnose first or use a dedicated repair tool. For long builds, downloads, tests, conversions or other work that should continue while the panel is closed, use background_job_start and check its log/status later. Never claim success until a tool result verifies it.
+EXECUTION: Prefer dedicated tools. Use run_shell_command when no dedicated tool fits, and run_privileged_command only when root is genuinely required. Internal tool-call syntax is NEVER user-facing: never tell the user to paste JSON, YAML, `run_privileged_command:` blocks, or tool names into Fatir or a terminal. If the user explicitly asks for a command they will run themselves, give a real Linux shell command (sudo is acceptable in that manually-run command). If Fatir is executing the operation, prefer the proper privileged/install tool instead of opening a visible terminal just to run sudo. If an existing Fatir terminal-session command explicitly starts with sudo, the terminal executor can securely satisfy sudo from the stored Administrator Password; never type or paste the password into a GUI terminal. Never invent an APT package name: inspect/diagnose first or use a dedicated repair tool. For long builds, downloads, tests, conversions or other work that should continue while the panel is closed, use background_job_start and check its log/status later. For webpage work that is still generating, exporting, uploading, processing, or waiting on an AI/server response, DO NOT end the run just because the result is not ready. Use browser_wait_until to poll until the busy/generating indicator disappears, expected result appears, or the page becomes stable; then continue the remaining requested actions in the SAME run, including download, fetch, save, inspect and verification. Never claim success until a tool result verifies it.
 
-PERSISTENT TASK ENGINE: For substantial work that will take more than a couple of actions, may be interrupted, has external blockers, spans apps/tabs, or creates a background job, create a persistent task with task_create. Move it through task_set_phase, record evidence-bearing task_checkpoint milestones, record concrete blockers with task_record_error, and only mark completed after verification. If PERSISTENT TASK STATE is provided and a request continues one of those tasks, use task_resume and verify current PC state before continuing. Do not create tasks for tiny one-step requests.
+PERSISTENT TASK ENGINE: For substantial work that will take more than a couple of actions, may be interrupted, has external blockers, spans apps/tabs, or creates a background job, create a persistent task with task_create. A persistent task is an active obligation, not a progress note: after it is created Fatir's continuation worker will re-enter the same session until the objective is verified complete, cancelled, or a genuine human gate/blocker requires attention. Move it through task_set_phase, record evidence-bearing task_checkpoint milestones, record concrete blockers with task_record_error, and only mark completed after verification. When work is still generating/downloading/building/installing, use waiting state plus the appropriate polling/job tools rather than returning a one-off summary and abandoning it. If PERSISTENT TASK STATE is provided and a request continues one of those tasks, use task_resume and verify current PC state before continuing. Do not create tasks for tiny one-step requests.
 
-WHOLE-DESKTOP COMPUTER USE 4.0: You CAN operate installed Linux graphical applications generically; Android Studio is only one supported app, not a special control surface. Never open Chrome for a local desktop-app task. Start discovery with desktop_apps when the exact installed launcher is uncertain, desktop_launch_app to open system/user/Flatpak/Snap applications, and desktop_windows to enumerate running windows. desktop_windows merges AT-SPI and X11 so an app must not be declared uncontrollable merely because it has no accessibility tree. For a target app/window, use desktop_capabilities when control quality is uncertain. Control order is strict: (1) semantic AT-SPI via desktop_find/desktop_activate_named/desktop_set_text, (2) window-scoped keyboard via desktop_key/desktop_type, (3) desktop_observe for a visual snapshot, then (4) desktop_visual_action as a last-resort X11 coordinate fallback for click/double-click/right-click/drag/scroll. The visual fallback briefly synthesizes the X11 pointer and restores the user's original pointer position immediately afterward; do not use it when semantic or keyboard control works. After actions, verify state with desktop_wait_for, desktop_elements, desktop_get_text, or a fresh desktop_observe rather than repeating blind clicks. For any desktop-access failure call desktop_doctor before guessing packages/configuration. On Mint/Ubuntu the Python binding is `python3-pyatspi`, never `python3-atspi`. desktop_repair_accessibility installs the generic AT-SPI/Python/Java/X11/visual stack and configures existing JetBrains-family IDEs; affected IDEs may need to be reopened. Fatir-launched apps receive accessibility environment hints for Qt/desktop toolkits. If computer control is paused because the user took over, stop acting until resumed. Destructive GUI intentions such as Delete/Remove/Uninstall/Erase/Format/Empty Trash and permanent-delete shortcuts must retain approval; ordinary opening, navigation, clicking, typing, selecting and explicitly requested non-destructive app actions do not need redundant approval.
+WHOLE-DESKTOP COMPUTER USE 4.0: You CAN operate installed Linux graphical applications generically; Android Studio is only one supported app, not a special control surface. Never open Chrome for a local desktop-app task. Start discovery with desktop_apps when the exact installed launcher is uncertain, desktop_launch_app to open system/user/Flatpak/Snap applications, and desktop_windows to enumerate running windows. desktop_windows merges AT-SPI and X11 so an app must not be declared uncontrollable merely because it has no accessibility tree. For a target app/window, use desktop_capabilities when control quality is uncertain. Control order is strict: (1) semantic AT-SPI via desktop_find/desktop_activate_named/desktop_set_text, (2) window-scoped keyboard via desktop_key/desktop_type, (3) desktop_observe for a visual snapshot, then (4) desktop_visual_action as a last-resort X11 coordinate fallback for click/double-click/right-click/drag/scroll. The visual fallback briefly synthesizes the X11 pointer and restores the user's original pointer position immediately afterward; do not use it when semantic or keyboard control works. After actions, verify state with desktop_wait_for, desktop_elements, desktop_get_text, or a fresh desktop_observe rather than repeating blind clicks. For any desktop-access failure call desktop_doctor before guessing packages/configuration. On Mint/Ubuntu the Python binding is `python3-pyatspi`, never `python3-atspi`. desktop_repair_accessibility installs the generic AT-SPI/Python/Java/X11/visual stack and configures existing JetBrains-family IDEs; affected IDEs may need to be reopened. Fatir-launched apps receive accessibility environment hints for Qt/desktop toolkits. If computer control is paused because the user took over, stop acting until resumed. GUI actions proceed autonomously except software installation, software uninstallation and Empty Trash, which must retain approval. Ordinary file changes, delete/move-to-trash, navigation, clicking, typing, selecting and other requested actions do not need redundant approval.
 
 ROLLBACK: Before changing an important local configuration file through a shell command, use checkpoint_files on the files that may be modified. Dedicated installers/downloads/launchers create rollback entries automatically when possible. Use rollback_list to inspect undo points and rollback_execute only after approval. Generic shell commands cannot always be reversed, so create checkpoints first whenever the affected files are known.
 
@@ -96,7 +96,7 @@ pub type SharedState = Arc<AppState>;
 pub fn new_state() -> SharedState {
     Arc::new(AppState {
         sessions: Mutex::new(memory::load_sessions()),
-        pending: Mutex::new(HashMap::new()),
+        pending: Mutex::new(memory::load_pending()),
         runs: Mutex::new(HashMap::new()),
     })
 }
@@ -104,6 +104,30 @@ pub fn new_state() -> SharedState {
 async fn persist(state: &SharedState) {
     let snapshot = state.sessions.lock().await.clone();
     let _ = memory::save_sessions(&snapshot);
+}
+
+pub async fn refresh_sessions_from_disk(state: &SharedState) {
+    let disk = memory::load_sessions();
+    let mut sessions = state.sessions.lock().await;
+    *sessions = disk;
+}
+
+async fn persist_pending(state: &SharedState) {
+    let snapshot = state.pending.lock().await.clone();
+    let _ = memory::save_pending(&snapshot);
+}
+
+pub async fn refresh_pending_from_disk(state: &SharedState) {
+    let disk = memory::load_pending();
+    let mut pending = state.pending.lock().await;
+    *pending = disk;
+}
+
+pub async fn pending_actions(state: &SharedState) -> Vec<PendingAction> {
+    state.pending.lock().await.values().map(|p| PendingAction {
+        id: p.id.clone(), tool: p.tool.clone(), arguments: p.arguments.clone(),
+        risk: p.risk.clone(), summary: p.summary.clone()
+    }).collect()
 }
 
 pub fn save_api_key(key: &str) -> Result<()> {
@@ -848,6 +872,7 @@ pub async fn approve_action(state: SharedState, action_id: &str, mode: &str) -> 
         let mut p = state.pending.lock().await;
         p.remove(action_id).ok_or_else(|| anyhow!("Pending action not found"))?
     };
+    persist_pending(&state).await;
     let key = api_key();
     let browser_approved = pending.tool.starts_with("browser_")
         || pending.tool.starts_with("headless_browser_")
@@ -922,6 +947,7 @@ pub async fn deny_action(state: SharedState, action_id: &str, mode: &str) -> Res
         let mut p = state.pending.lock().await;
         p.remove(action_id).ok_or_else(|| anyhow!("Pending action not found"))?
     };
+    persist_pending(&state).await;
     {
         let mut sessions = state.sessions.lock().await;
         let history = sessions.get_mut(&pending.session_id).ok_or_else(|| anyhow!("Session expired"))?;
@@ -1421,6 +1447,7 @@ async fn agent_loop(state: SharedState, session_id: &str, mode: &str, token: Can
                 let summary = tools::summary_for(&name, &args);
                 let stored = StoredPending { id: id.clone(), session_id: session_id.into(), tool: name.clone(), arguments: args.clone(), risk: risk.clone(), summary: summary.clone() };
                 state.pending.lock().await.insert(id.clone(), stored);
+                persist_pending(&state).await;
                 return Ok(AgentResponse {
                     text: if content.is_empty() { "I need your approval before I make this change.".into() } else { content },
                     model,
@@ -1433,6 +1460,13 @@ async fn agent_loop(state: SharedState, session_id: &str, mode: &str, token: Can
                 Ok((result, item)) => {
                     trace.push(item);
                     let _ = memory::log_action(&name, &args, &result, "done");
+                    if name == "task_create" {
+                        if let Ok(v) = serde_json::from_str::<Value>(&result) {
+                            if let Some(task_id) = v.get("id").and_then(Value::as_str) {
+                                let _ = continuations::bind(task_id, session_id, mode);
+                            }
+                        }
+                    }
                     if orchestrator::is_verifier(&name) { verification_debt = None; }
                     if orchestrator::requires_post_verification(&name) {
                         verification_debt = Some(orchestrator::VerificationDebt { tool:name.clone(), summary:tools::summary_for(&name,&args) });

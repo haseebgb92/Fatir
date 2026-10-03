@@ -16,7 +16,7 @@ pub struct ProactiveConfig {
     pub downloads_warning_mb: u64,
     pub scan_minutes: u64,
 }
-impl Default for ProactiveConfig { fn default()->Self{Self{enabled:true,desktop_notifications:true,disk_warning_percent:85,trash_warning_mb:1024,downloads_warning_mb:1536,scan_minutes:15}} }
+impl Default for ProactiveConfig { fn default()->Self{Self{enabled:true,desktop_notifications:true,disk_warning_percent:85,trash_warning_mb:1024,downloads_warning_mb:1536,scan_minutes:2}} }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProactiveEvent {
@@ -72,4 +72,4 @@ pub async fn run_once()->Result<Value>{
 pub fn events(limit:usize)->Result<Vec<Value>>{let mut items=load_events();items.retain(|x|!x.acknowledged);items.sort_by(|a,b|b.created_at.cmp(&a.created_at));Ok(items.into_iter().take(limit.clamp(1,100)).map(|x|serde_json::to_value(x).unwrap_or(json!({}))).collect())}
 pub fn acknowledge(id:&str)->Result<Value>{let mut items=load_events();let e=items.iter_mut().find(|x|x.id==id).ok_or_else(||anyhow!("Proactive event not found"))?;e.acknowledged=true;let out=serde_json::to_value(e.clone())?;save_events(&items)?;Ok(out)}
 pub fn status()->Value{json!({"config":load_config(),"unacknowledged":load_events().iter().filter(|x|!x.acknowledged).count()})}
-pub async fn monitor_forever(){loop{let cfg=load_config();if cfg.enabled{let _=run_once().await;}tokio::time::sleep(Duration::from_secs(cfg.scan_minutes.clamp(5,240)*60)).await;}}
+pub async fn monitor_forever(){loop{let cfg=load_config();if cfg.enabled{let _=run_once().await;}tokio::time::sleep(Duration::from_secs(cfg.scan_minutes.clamp(1,240)*60)).await;}}

@@ -1,4 +1,4 @@
-# Fatir v1.1.1 Release Gate
+# Fatir v1.2.0 Release Gate
 
 Fatir V1 is the consolidation release that turns browser, Linux desktop, terminal, filesystem, projects, background jobs, schedules, memory and taught routines into one verified execution system.
 
@@ -67,7 +67,7 @@ The release environment used to assemble this source does not contain a Rust too
 - After that browser workflow, say `now open the local file in Nemo`; browser continuity must end immediately and the turn must use the local/desktop surface.
 - A blocked browser tool attempt on a truly local turn must not establish browser continuity for the next message.
 
-## v1.1.1 sidebar UI smoke tests
+## v1.2.0 sidebar UI smoke tests
 
 1. Click the Cinnamon Fatir icon: one light sidebar opens on the configured monitor edge; no extra app window appears.
 2. Click `×`: Fatir hides instead of quitting. Click the Cinnamon icon again: the same resident process reopens.

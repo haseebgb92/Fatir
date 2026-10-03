@@ -8,6 +8,7 @@ use serde_json::{json, Value};
 use std::{cmp::Reverse, collections::HashSet, fs, path::{Path, PathBuf}, process::Stdio, sync::atomic::{AtomicBool, Ordering}};
 use sysinfo::System;
 use tokio::process::Command;
+use tokio::io::AsyncWriteExt;
 use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
 use tokio::net::TcpStream;
 use walkdir::WalkDir;
@@ -22,15 +23,15 @@ pub fn tool_definitions() -> Vec<Value> {
         tool("cleanup_scan", "Analyze Downloads or another folder for high-confidence cleanup candidates and uncertain review items. Read-only; never deletes anything and never labels personal files safe just because they are old or large.", json!({"type":"object","properties":{"path":{"type":"string"},"min_age_days":{"type":"integer","minimum":1,"maximum":3650},"limit":{"type":"integer","minimum":1,"maximum":500}},"additionalProperties":false})),
         tool("duplicate_scan", "Find byte-for-byte duplicate files using size grouping and SHA-256. Read-only. Returns duplicate groups and reclaimable size; keep at least one copy.", json!({"type":"object","properties":{"path":{"type":"string"},"minimum_size_mb":{"type":"integer","minimum":1,"maximum":10240},"limit_groups":{"type":"integer","minimum":1,"maximum":100}},"additionalProperties":false})),
         tool("trash_inventory", "Inspect desktop Trash, total size and largest trashed files. Read-only.", json!({"type":"object","properties":{"limit":{"type":"integer","minimum":1,"maximum":200}},"additionalProperties":false})),
-        tool("cleanup_move_to_trash", "Move multiple explicitly selected files/folders to desktop Trash. Requires approval. Never permanently erases them.", json!({"type":"object","properties":{"paths":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":100}},"required":["paths"],"additionalProperties":false})),
+        tool("cleanup_move_to_trash", "Move multiple explicitly selected files/folders to desktop Trash. Runs without redundant confirmation because items remain recoverable in Trash.", json!({"type":"object","properties":{"paths":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":100}},"required":["paths"],"additionalProperties":false})),
         tool("empty_trash", "Permanently empty desktop Trash. Irreversible and always requires explicit approval.", json!({"type":"object","properties":{},"additionalProperties":false})),
         tool("read_file", "Read and extract useful content from a local text, code, PDF or DOCX file. Read-only. For PDFs this extracts text; use render_pdf_pages when visual page content matters.", json!({"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false})),
         tool("render_pdf_pages", "Render a page range from a local PDF into images so you can visually inspect scans, diagrams, charts, screenshots, photographs, layout and other content that text extraction cannot see. Read-only. Inspect at most 12 pages per call.", json!({"type":"object","properties":{"path":{"type":"string"},"start_page":{"type":"integer","minimum":1},"end_page":{"type":"integer","minimum":1}},"required":["path","start_page","end_page"],"additionalProperties":false})),
         tool("open_path", "Open a LOCAL file or folder in the user's normal desktop application. Do not use this for websites; use browser_open_url for http/https.", json!({"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false})),
-        tool("write_text_file", "Create or replace a local text file with automatic rollback checkpoint. Requires approval.", json!({"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"},"create_parents":{"type":"boolean"}},"required":["path","content"],"additionalProperties":false})),
-        tool("copy_file", "Copy a local file to a new destination with rollback protection for the destination. Requires approval.", json!({"type":"object","properties":{"source":{"type":"string"},"destination":{"type":"string"}},"required":["source","destination"],"additionalProperties":false})),
-        tool("move_path", "Move/rename a local file or folder to a destination that does not already exist. Records an undo move. Requires approval.", json!({"type":"object","properties":{"source":{"type":"string"},"destination":{"type":"string"}},"required":["source","destination"],"additionalProperties":false})),
-        tool("create_directory", "Create a local directory and record an undo point when it is newly created. Requires approval.", json!({"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false})),
+        tool("write_text_file", "Create or replace a local text file with automatic rollback checkpoint. Runs autonomously.", json!({"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"},"create_parents":{"type":"boolean"}},"required":["path","content"],"additionalProperties":false})),
+        tool("copy_file", "Copy a local file to a new destination with rollback protection for the destination. Runs autonomously.", json!({"type":"object","properties":{"source":{"type":"string"},"destination":{"type":"string"}},"required":["source","destination"],"additionalProperties":false})),
+        tool("move_path", "Move/rename a local file or folder to a destination that does not already exist. Records an undo move. Runs autonomously.", json!({"type":"object","properties":{"source":{"type":"string"},"destination":{"type":"string"}},"required":["source","destination"],"additionalProperties":false})),
+        tool("create_directory", "Create a local directory and record an undo point when it is newly created. Runs autonomously.", json!({"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false})),
         tool("take_screenshot", "Capture the current desktop to an image and return its path.", json!({"type":"object","properties":{},"additionalProperties":false})),
         tool("browser_observe", "Capture the current Fatir-controlled browser webpage without moving the user's physical mouse. Fatir has its own visible virtual pointer in the controlled browser. Returns a webpage screenshot for the vision model. Use browser_elements before guessing coordinates.", json!({"type":"object","properties":{},"additionalProperties":false})),
         tool("browser_elements", "Inspect the current webpage through Chrome DevTools MCP accessibility snapshot. Returns semantic roles, labels and MCP uids for buttons, links, inputs and controls. Prefer targeted tools such as browser_click_text when the requested control name is already known.", json!({"type":"object","properties":{},"additionalProperties":false})),
@@ -41,6 +42,7 @@ pub fn tool_definitions() -> Vec<Value> {
         tool("share_email_draft", "Create a Gmail draft to an email address and attach one or more LOCAL files using Fatir's controlled browser. It does not press Send. An explicit user request to prepare/share the files is sufficient authorization; do not ask again.", json!({"type":"object","properties":{"paths":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":25},"to":{"type":"string"},"subject":{"type":"string"}},"required":["paths","to"],"additionalProperties":false})),
         tool("share_latest_screenshot", "Find the newest screenshot in ~/Pictures/screenshot (or Fatir's screenshot folder). Read-only and returns the file path.", json!({"type":"object","properties":{},"additionalProperties":false})),
         tool("browser_page_summary", "Read a compact DOM summary of the current webpage: URL, title, headings, visible controls and a bounded amount of visible text. Prefer this over screenshots when visual interpretation is unnecessary.", json!({"type":"object","properties":{"max_chars":{"type":"integer","minimum":1000,"maximum":20000}},"additionalProperties":false})),
+        tool("browser_wait_until", "Continuously poll the current webpage until a condition is met instead of ending the task early. Use text_present to wait for result text or a control to appear, text_absent to wait for busy or generating text to disappear, or stable to wait until the visible page summary stops changing. After this returns, continue remaining requested actions in the SAME run.", json!({"type":"object","properties":{"mode":{"type":"string","enum":["text_present","text_absent","stable"]},"text":{"type":"string"},"timeout_seconds":{"type":"integer","minimum":2,"maximum":600},"poll_seconds":{"type":"integer","minimum":1,"maximum":15},"stable_polls":{"type":"integer","minimum":2,"maximum":10}},"required":["mode"],"additionalProperties":false})),
         tool("amazon_keyword_research", "High-efficiency Amazon keyword research skill. Searches Amazon.com for a keyword, collects the first organic product results, visits each product page inside Fatir's controlled browser, extracts title, ASIN, current displayed price and feature bullets, and writes a CSV. Use this instead of manually opening/clicking five products. Read-only web research plus local CSV creation.", json!({"type":"object","properties":{"keyword":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":10},"output_path":{"type":"string"}},"required":["keyword"],"additionalProperties":false})),
         tool("browser_click_element", "Activate a webpage element by its MCP uid from browser_elements (legacy Fatir IDs remain supported as fallback). This uses browser automation and never moves the user's physical mouse pointer.", json!({"type":"object","properties":{"element_id":{"type":"string"}},"required":["element_id"],"additionalProperties":false})),
         tool("browser_fill_element", "Fill a webpage input by its MCP uid from browser_elements (legacy Fatir IDs remain supported as fallback). Use only for ordinary non-sensitive text. Never type passwords, one-time codes, recovery codes, payment data or API keys.", json!({"type":"object","properties":{"element_id":{"type":"string"},"text":{"type":"string"}},"required":["element_id","text"],"additionalProperties":false})),
@@ -112,11 +114,11 @@ pub fn tool_definitions() -> Vec<Value> {
         tool("terminal_session_create", "Create a persistent logical terminal session with a remembered working directory and command history.", json!({"type":"object","properties":{"label":{"type":"string"},"cwd":{"type":"string"}},"required":["label"],"additionalProperties":false})),
         tool("terminal_session_list", "List Fatir persistent logical terminal sessions and their working directories. Read-only.", json!({"type":"object","properties":{},"additionalProperties":false})),
         tool("terminal_session_set_cwd", "Change the remembered working directory for a Fatir terminal session.", json!({"type":"object","properties":{"id":{"type":"string"},"cwd":{"type":"string"}},"required":["id","cwd"],"additionalProperties":false})),
-        tool("terminal_session_exec", "Run a shell command inside a persistent logical terminal session, preserving cwd/history across turns. Use background_job_start for commands that must keep running after the turn.", json!({"type":"object","properties":{"id":{"type":"string"},"command":{"type":"string"},"timeout_seconds":{"type":"integer","minimum":1,"maximum":900}},"required":["id","command"],"additionalProperties":false})),
+        tool("terminal_session_exec", "Run a shell command inside a persistent logical terminal session, preserving cwd/history across turns. If a command begins with sudo and the Administrator Password is stored, Fatir authenticates it securely from the Linux keyring instead of waiting at a password prompt. Use background_job_start for commands that must keep running after the turn.", json!({"type":"object","properties":{"id":{"type":"string"},"command":{"type":"string"},"timeout_seconds":{"type":"integer","minimum":1,"maximum":900}},"required":["id","command"],"additionalProperties":false})),
         tool("terminal_session_history", "Read recent command/output history for a persistent terminal session.", json!({"type":"object","properties":{"id":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":80}},"required":["id"],"additionalProperties":false})),
         tool("terminal_session_close", "Close/forget a persistent logical terminal session. Does not kill unrelated processes.", json!({"type":"object","properties":{"id":{"type":"string"}},"required":["id"],"additionalProperties":false})),
         tool("fatir_v1_status", "Read the V1 orchestration engine status and enabled safety/execution guarantees. Read-only.", json!({"type":"object","properties":{},"additionalProperties":false})),
-        tool("background_job_start", "Start a long-running shell command as a persistent background job with its own log. Requires approval; use this for builds/downloads/tests that should continue after Fatir hides.", json!({"type":"object","properties":{"label":{"type":"string"},"command":{"type":"string"},"cwd":{"type":"string"}},"required":["label","command"],"additionalProperties":false})),
+        tool("background_job_start", "Start a long-running shell command as a persistent background job with its own log. Runs autonomously; use this for builds/downloads/tests that should continue after Fatir hides.", json!({"type":"object","properties":{"label":{"type":"string"},"command":{"type":"string"},"cwd":{"type":"string"}},"required":["label","command"],"additionalProperties":false})),
         tool("background_job_list", "List Fatir background jobs and whether they are still running.", json!({"type":"object","properties":{},"additionalProperties":false})),
         tool("background_job_log", "Read the tail of a background job log.", json!({"type":"object","properties":{"id":{"type":"string"},"lines":{"type":"integer","minimum":1,"maximum":500}},"required":["id"],"additionalProperties":false})),
         tool("background_job_cancel", "Stop an Fatir background job. Requires approval.", json!({"type":"object","properties":{"id":{"type":"string"}},"required":["id"],"additionalProperties":false})),
@@ -147,7 +149,7 @@ pub fn tool_definitions() -> Vec<Value> {
         tool("proactive_events", "Read unacknowledged local proactive events such as disk pressure, cleanup opportunities, or completed/failed background jobs.", json!({"type":"object","properties":{"limit":{"type":"integer","minimum":1,"maximum":100}},"additionalProperties":false})),
         tool("proactive_ack", "Acknowledge one proactive event after it has been handled or dismissed.", json!({"type":"object","properties":{"id":{"type":"string"}},"required":["id"],"additionalProperties":false})),
         tool("run_shell_command", "Run a general Bash command as the current user and return stdout/stderr/exit status. Use this when dedicated tools do not cover the task, including curl, chmod, mv, git, npm, cargo or installer scripts. Harmless user-level commands follow the approval preference; destructive/system-sensitive commands still require approval. Do not include sudo or pkexec; use run_privileged_command if root is truly required.", json!({"type":"object","properties":{"command":{"type":"string"},"cwd":{"type":"string"},"timeout_seconds":{"type":"integer","minimum":1,"maximum":900}},"required":["command"],"additionalProperties":false})),
-        tool("run_privileged_command", "Run a Bash command through Linux PolicyKit (pkexec) after explicit user approval. Use only when root access is genuinely required. Do not include sudo in the command. Fatir never receives the user's password.", json!({"type":"object","properties":{"command":{"type":"string"},"timeout_seconds":{"type":"integer","minimum":1,"maximum":900}},"required":["command"],"additionalProperties":false})),
+        tool("run_privileged_command", "Run a Bash command as root when genuinely required. If an Administrator Password is stored in Fatir Settings, use it from Linux keyring without exposing it to the model or logs; otherwise fall back to the normal PolicyKit prompt. Do not include sudo in the command.", json!({"type":"object","properties":{"command":{"type":"string"},"timeout_seconds":{"type":"integer","minimum":1,"maximum":900}},"required":["command"],"additionalProperties":false})),
         tool("web_search", "Search the current web using Ollama web search. Use for official installers, current documentation and changing facts.", json!({"type":"object","properties":{"query":{"type":"string"}},"required":["query"],"additionalProperties":false})),
         tool("download_file", "Download a file from a URL into the user's Downloads/Fatir folder. Requires confirmation.", json!({"type":"object","properties":{"url":{"type":"string"},"filename":{"type":"string"}},"required":["url","filename"],"additionalProperties":false})),
         tool("install_apt", "Install an APT package using the normal Linux PolicyKit authentication dialog. Requires confirmation.", json!({"type":"object","properties":{"package":{"type":"string"}},"required":["package"],"additionalProperties":false})),
@@ -179,7 +181,7 @@ pub fn tool_definitions_for_hint(hint: &str) -> Vec<Value> {
         return select(["amazon_keyword_research", "open_path"].into_iter().collect());
     }
     if !explicit_headless && browser_request && (h.contains("continue with google") || h.contains("sign in with google") || h.contains("login with google")) {
-        return select(["browser_open_url", "browser_click_text", "browser_page_summary", "browser_get_url", "browser_console_messages", "browser_network_recent"].into_iter().collect());
+        return select(["browser_open_url", "browser_click_text", "browser_page_summary", "browser_wait_until", "browser_get_url", "browser_console_messages", "browser_network_recent"].into_iter().collect());
     }
 
     let mut allowed: HashSet<&str> = [
@@ -195,7 +197,7 @@ pub fn tool_definitions_for_hint(hint: &str) -> Vec<Value> {
     if teach::is_active() { allowed.extend(["teach_status","teach_stop","teach_cancel"]); }
     if browser_request && !explicit_headless {
         allowed.extend([
-            "browser_open_url","browser_get_url","browser_page_summary","browser_click_text","browser_fill_by_label",
+            "browser_open_url","browser_get_url","browser_page_summary","browser_wait_until","browser_click_text","browser_fill_by_label",
             "browser_elements","browser_click_element","browser_fill_element","browser_fill_credential","browser_upload_file",
             "browser_key","browser_scroll","browser_observe","browser_click","browser_type","web_search","share_whatsapp_send","share_email_draft","share_latest_screenshot",
             "browser_tabs","browser_new_tab","browser_select_tab","browser_close_tab","browser_extract_structure",
@@ -344,6 +346,9 @@ fn desktop_action_risk(args:&Value) -> &'static str {
 
 fn shell_command_risk(command:&str)-> &'static str {
     let lower=command.to_ascii_lowercase();
+    let package_change = Regex::new(r"\b(apt|apt-get|dnf|yum)\s+(install|remove|purge|autoremove)\b|\bdpkg\s+-i\b|\bflatpak\s+(install|uninstall)\b|\bsnap\s+(install|remove)\b").map(|r|r.is_match(&lower)).unwrap_or(false);
+    if package_change { return "install"; }
+    if (lower.contains(".local/share/trash") || lower.contains("/trash/files")) && Regex::new(r"\b(rm|find)\b").map(|r|r.is_match(&lower)).unwrap_or(false) { return "empty-trash"; }
     let destructive=[
         r"(^|[;&|]{1,2}\s*)(rm|rmdir|shred|wipefs|mkfs(?:\.[a-z0-9_+-]+)?|fdisk|cfdisk|sfdisk|parted)(\s|$)",
         r"\b(apt|apt-get|dnf|yum)\s+(remove|purge|autoremove)\b",
@@ -358,14 +363,10 @@ fn shell_command_risk(command:&str)-> &'static str {
 
 pub fn risk_for(tool: &str, args:&Value) -> &'static str {
     match tool {
-        "install_apt" | "install_deb" | "run_privileged_command" | "desktop_repair_accessibility" => "system",
-        "browser_fill_credential" | "desktop_fill_credential" => "sensitive",
-        "run_shell_with_credentials" => "sensitive",
-        "run_shell_command" | "terminal_session_exec" | "background_job_start" | "scheduled_job_create" => shell_command_risk(args.get("command").and_then(Value::as_str).unwrap_or("")),
-        "install_flatpak" | "download_file" | "extract_archive" | "create_desktop_entry" | "background_job_cancel" | "scheduled_job_cancel" | "write_text_file" | "copy_file" | "move_path" | "create_directory" | "routine_capture_recent" | "routine_remove" | "project_forget" | "terminal_session_close" => "change",
-        "move_to_trash" | "cleanup_move_to_trash" | "empty_trash" => "destructive",
-        "rollback_execute" => "change",
-        "desktop_activate_named" | "desktop_visual_action" | "desktop_key" => desktop_action_risk(args),
+        "install_apt" | "install_flatpak" | "install_deb" | "desktop_repair_accessibility" => "install",
+        "empty_trash" => "empty-trash",
+        "run_shell_command" | "terminal_session_exec" | "background_job_start" | "scheduled_job_create" | "run_privileged_command" =>
+            shell_command_risk(args.get("command").and_then(Value::as_str).unwrap_or("")),
         _ => "auto",
     }
 }
@@ -458,6 +459,7 @@ pub async fn execute(tool: &str, args: &Value, api_key: Option<&str>) -> Result<
         "share_email_draft" => { let paths=args.get("paths").and_then(Value::as_array).ok_or_else(||anyhow!("Missing paths"))?.iter().filter_map(Value::as_str).map(str::to_string).collect::<Vec<_>>(); serde_json::to_string_pretty(&share::email_draft(&paths, required_str(args,"to")?, args.get("subject").and_then(Value::as_str).unwrap_or("")).await?)? },
         "share_latest_screenshot" => serde_json::to_string_pretty(&share::latest_screenshot()?)?,
         "browser_page_summary" => browser_page_summary(args.get("max_chars").and_then(Value::as_u64).unwrap_or(8000) as usize).await?,
+        "browser_wait_until" => browser_wait_until(required_str(args,"mode")?, args.get("text").and_then(Value::as_str), args.get("timeout_seconds").and_then(Value::as_u64).unwrap_or(180), args.get("poll_seconds").and_then(Value::as_u64).unwrap_or(2), args.get("stable_polls").and_then(Value::as_u64).unwrap_or(3) as usize).await?,
         "amazon_keyword_research" => amazon_keyword_research(required_str(args, "keyword")?, args.get("limit").and_then(Value::as_u64).unwrap_or(5) as usize, args.get("output_path").and_then(Value::as_str)).await?,
         "browser_click_element" => browser_click_element(required_str(args, "element_id")?).await?,
         "browser_fill_element" => browser_fill_element(required_str(args, "element_id")?, required_str(args, "text")?).await?,
@@ -537,7 +539,7 @@ pub async fn execute(tool: &str, args: &Value, api_key: Option<&str>) -> Result<
         "terminal_session_create" => serde_json::to_string_pretty(&terminal_sessions::create(required_str(args,"label")?,args.get("cwd").and_then(Value::as_str))?)?,
         "terminal_session_list" => serde_json::to_string_pretty(&terminal_sessions::list()?)?,
         "terminal_session_set_cwd" => serde_json::to_string_pretty(&terminal_sessions::set_cwd(required_str(args,"id")?,required_str(args,"cwd")?)?)?,
-        "terminal_session_exec" => {validate_shell_command(required_str(args,"command")?)?;serde_json::to_string_pretty(&terminal_sessions::exec(required_str(args,"id")?,required_str(args,"command")?,args.get("timeout_seconds").and_then(Value::as_u64).unwrap_or(180)).await?)?},
+        "terminal_session_exec" => {validate_command_basics(required_str(args,"command")?)?;serde_json::to_string_pretty(&terminal_sessions::exec(required_str(args,"id")?,required_str(args,"command")?,args.get("timeout_seconds").and_then(Value::as_u64).unwrap_or(180)).await?)?},
         "terminal_session_history" => serde_json::to_string_pretty(&terminal_sessions::history(required_str(args,"id")?,args.get("limit").and_then(Value::as_u64).unwrap_or(20) as usize)?)?,
         "terminal_session_close" => serde_json::to_string_pretty(&terminal_sessions::close(required_str(args,"id")?)?)?,
         "fatir_v1_status" => serde_json::to_string_pretty(&orchestrator::status())?,
@@ -1797,6 +1799,33 @@ async fn browser_fill_by_label(label: &str, text: &str) -> Result<String> {
     Ok(serde_json::to_string_pretty(&json!({"ok":true,"field":label,"characters":text.chars().count(),"virtual_pointer":true,"physical_mouse_moved":false}))?)
 }
 
+async fn browser_wait_until(mode: &str, text: Option<&str>, timeout_seconds: u64, poll_seconds: u64, stable_polls: usize) -> Result<String> {
+    let timeout = timeout_seconds.clamp(2, 600);
+    let poll = poll_seconds.clamp(1, 15);
+    let required_stable = stable_polls.clamp(2, 10);
+    let needle = text.unwrap_or("").trim().to_ascii_lowercase();
+    if matches!(mode, "text_present" | "text_absent") && needle.is_empty() { return Err(anyhow!("browser_wait_until requires text for text_present/text_absent mode")); }
+    if !matches!(mode, "text_present" | "text_absent" | "stable") { return Err(anyhow!("Unsupported browser wait mode")); }
+    let started = std::time::Instant::now();
+    let mut previous = String::new();
+    let mut stable_count = 0usize;
+    let mut polls = 0usize;
+    loop {
+        polls += 1;
+        let summary = browser_page_summary(20_000).await.unwrap_or_default();
+        let normalized = summary.to_ascii_lowercase();
+        let matched = match mode {
+            "text_present" => normalized.contains(&needle),
+            "text_absent" => !normalized.contains(&needle),
+            "stable" => { if !previous.is_empty() && summary == previous { stable_count += 1; } else { stable_count = 0; } previous = summary.clone(); stable_count >= required_stable },
+            _ => false,
+        };
+        if matched { return Ok(serde_json::to_string_pretty(&json!({"condition_met":true,"mode":mode,"text":text,"elapsed_seconds":started.elapsed().as_secs(),"polls":polls,"summary":shorten(&summary,6000)}))?); }
+        if started.elapsed().as_secs() >= timeout { return Ok(serde_json::to_string_pretty(&json!({"condition_met":false,"timed_out":true,"mode":mode,"text":text,"elapsed_seconds":started.elapsed().as_secs(),"polls":polls,"summary":shorten(&summary,6000)}))?); }
+        tokio::time::sleep(std::time::Duration::from_secs(poll)).await;
+    }
+}
+
 async fn browser_page_summary(max_chars: usize) -> Result<String> {
     let max_chars=max_chars.clamp(1000,20_000);
     if let Ok((page,snapshot))=chrome_mcp_snapshot().await {
@@ -2200,13 +2229,18 @@ fn create_directory(path:&str)->Result<String>{
     Ok(format!("Directory ready: {}",p.display()))
 }
 
-fn validate_shell_command(command: &str) -> Result<()> {
+fn validate_command_basics(command: &str) -> Result<()> {
     if command.trim().is_empty() { return Err(anyhow!("Command cannot be empty")); }
     if command.len() > 12_000 { return Err(anyhow!("Command is too long")); }
     if command.contains('\0') { return Err(anyhow!("Command contains an invalid null byte")); }
+    Ok(())
+}
+
+fn validate_shell_command(command: &str) -> Result<()> {
+    validate_command_basics(command)?;
     let lower = command.to_lowercase();
     if lower.contains("sudo ") || lower.starts_with("sudo") || lower.contains("pkexec ") || lower.starts_with("pkexec") {
-        return Err(anyhow!("Do not use sudo or pkexec inside ordinary Fatir shell commands. Use run_privileged_command so Linux can show the PolicyKit approval dialog."));
+        return Err(anyhow!("Do not use sudo or pkexec inside ordinary Fatir shell commands. Use run_privileged_command so Fatir can use the saved administrator credential securely."));
     }
     Ok(())
 }
@@ -2306,11 +2340,29 @@ async fn browser_fill_credential(element_id: &str, credential_id: &str) -> Resul
 async fn run_privileged_command(command: &str, timeout_seconds: u64) -> Result<String> {
     validate_shell_command(command)?;
     let timeout = timeout_seconds.clamp(1, 900);
-    let output = tokio::time::timeout(
-        std::time::Duration::from_secs(timeout),
-        Command::new("pkexec").arg("bash").arg("-lc").arg(command)
-            .stdout(Stdio::piped()).stderr(Stdio::piped()).output()
-    ).await.map_err(|_| anyhow!("Privileged command timed out after {timeout} seconds"))??;
+
+    let output = if credentials::has_sudo() {
+        let secret = credentials::sudo_secret()?;
+        let mut child = Command::new("sudo")
+            .args(["-S", "-p", "", "bash", "-lc", command])
+            .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped())
+            .spawn().context("Could not start sudo")?;
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(secret.as_bytes()).await?;
+            stdin.write_all(b"\n").await?;
+            stdin.shutdown().await?;
+        }
+        drop(secret);
+        tokio::time::timeout(std::time::Duration::from_secs(timeout), child.wait_with_output())
+            .await.map_err(|_| anyhow!("Privileged command timed out after {timeout} seconds"))??
+    } else {
+        tokio::time::timeout(
+            std::time::Duration::from_secs(timeout),
+            Command::new("pkexec").arg("bash").arg("-lc").arg(command)
+                .stdout(Stdio::piped()).stderr(Stdio::piped()).output()
+        ).await.map_err(|_| anyhow!("Privileged command timed out after {timeout} seconds"))??
+    };
+
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     if !output.status.success() {
@@ -2318,15 +2370,16 @@ async fn run_privileged_command(command: &str, timeout_seconds: u64) -> Result<S
             output.status.code().map(|v| v.to_string()).unwrap_or_else(|| "signal".into()),
             shorten(&stdout, 12_000), shorten(&stderr, 12_000)));
     }
-    Ok(format!("Exit code: 0\n--- stdout ---\n{}\n--- stderr ---\n{}", shorten(&stdout,45_000), shorten(&stderr,25_000)))
+    Ok(format!("Exit code: 0\n--- stdout ---\n{}\n--- stderr ---\n{}",
+        shorten(&stdout,45_000), shorten(&stderr,25_000)))
 }
 
 async fn install_apt(package: &str) -> Result<String> {
     validate_token(package)?;
     let was_installed = Command::new("dpkg-query").args(["-W", "-f=${Status}", package]).output().await.ok()
         .map(|o| o.status.success() && String::from_utf8_lossy(&o.stdout).contains("install ok installed")).unwrap_or(false);
-    let status = Command::new("pkexec").args(["apt-get", "install", "-y", package]).status().await?;
-    if !status.success() { return Err(anyhow!("APT installation failed")); }
+    run_privileged_command(&format!("apt-get install -y {}", package), 900).await
+        .map_err(|e| anyhow!("APT installation failed: {e}"))?;
     if !was_installed { let _ = rollback::record(&format!("Remove newly installed APT package {package}"), "apt_remove", json!({"package":package})); }
     Ok(format!("Installed APT package {package}{}", if was_installed { " (already present; verified)" } else { "" }))
 }
@@ -2346,8 +2399,9 @@ async fn install_deb(path: &str) -> Result<String> {
     let pkg_out = Command::new("dpkg-deb").args(["-f", p.to_string_lossy().as_ref(), "Package"]).output().await.ok();
     let package = pkg_out.as_ref().filter(|o|o.status.success()).map(|o|String::from_utf8_lossy(&o.stdout).trim().to_string()).filter(|x|!x.is_empty());
     let was_installed = if let Some(pkg)=package.as_deref(){Command::new("dpkg-query").args(["-W", "-f=${Status}", pkg]).output().await.ok().map(|o|o.status.success()&&String::from_utf8_lossy(&o.stdout).contains("install ok installed")).unwrap_or(false)}else{false};
-    let status = Command::new("pkexec").args(["apt-get", "install", "-y", p.to_string_lossy().as_ref()]).status().await?;
-    if !status.success() { return Err(anyhow!(".deb installation failed")); }
+    let deb_path = p.to_string_lossy().replace('\'', "'\\''");
+    run_privileged_command(&format!("apt-get install -y '{}'", deb_path), 900).await
+        .map_err(|e| anyhow!(".deb installation failed: {e}"))?;
     if !was_installed { if let Some(pkg)=package.as_deref(){let _=rollback::record(&format!("Remove newly installed package {pkg}"),"apt_remove",json!({"package":pkg}));} }
     Ok(format!("Installed {}", p.display()))
 }

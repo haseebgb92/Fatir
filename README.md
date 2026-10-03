@@ -7,7 +7,7 @@
 
 Fatir is a light Tauri sidebar for Linux Mint/Cinnamon that can operate desktop apps, work with your active browser session, run terminal tasks, manage files and projects, remember useful context, and learn repeatable workflows.
 
-**Current release:** v1.1.1 · **Primary target:** Linux Mint Cinnamon / X11 · **License:** MIT
+**Current release:** v1.3.2 · **Primary target:** Linux Mint Cinnamon / X11 · **License:** MIT
 
 [Website](https://haseebgb92.github.io/Fatir/) · [Install](#installation) · [Security](SECURITY.md) · [Architecture](docs/ARCHITECTURE.md) · [Issues](https://github.com/haseebgb92/Fatir/issues)
 </div>
@@ -17,6 +17,8 @@ Fatir is a light Tauri sidebar for Linux Mint/Cinnamon that can operate desktop 
 ---
 
 ## What Fatir is
+
+> **v1.3.x architecture:** Fatir now uses a split resident design: `fatir-core` stays lightweight in the background for continuations, monitoring and secure auth handling, while the Tauri/WebKit sidebar launches on demand and exits completely when closed.
 
 **Fatir is a local-first AI desktop assistant for Linux** built as a resident sidebar rather than a separate IDE or browser-only chat app. It combines Linux desktop automation, Chrome browser automation, local Ollama models, persistent memory, schedules, reusable workflows, and verification-aware task execution.
 

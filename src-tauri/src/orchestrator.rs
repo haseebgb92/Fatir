@@ -25,7 +25,7 @@ pub fn requires_post_verification(tool: &str) -> bool {
 
 pub fn is_verifier(tool: &str) -> bool {
     matches!(tool,
-        "browser_elements" | "browser_page_summary" | "browser_observe" |
+        "browser_elements" | "browser_page_summary" | "browser_wait_until" | "browser_observe" |
         "browser_extract_structure" | "browser_network_recent" | "browser_diagnostics" |
         "browser_tabs" | "desktop_windows" | "desktop_elements" | "desktop_find" |
         "desktop_get_text" | "desktop_wait_for" | "desktop_observe" | "desktop_capabilities")

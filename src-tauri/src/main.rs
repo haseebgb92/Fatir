@@ -1,38 +1,33 @@
-mod models;
-mod memory;
-mod ollama;
-mod tools;
-mod observer;
-mod tasks;
-mod jobs;
-mod credentials;
-mod rollback;
-mod software;
-mod health;
-mod desktop;
-mod cleanup;
-mod routines;
-mod proactive;
-mod adaptive;
-mod pointer;
-mod share;
-mod browser_memory;
-mod teach;
-mod orchestrator;
-mod recovery;
-mod projects;
-mod terminal_sessions;
-mod app_playbooks;
-mod permissions;
-mod schedules;
-
-use models::{AgentResponse, Attachment, SystemSnapshot};
-use ollama::SharedState;
+use fatir::{
+    adaptive, app_playbooks, auth_watcher, browser_memory, cleanup, continuations, credentials,
+    desktop, health, jobs, memory, ollama, orchestrator, permissions, pointer, proactive, projects,
+    recovery, rollback, routines, schedules, share, software, tasks, teach, terminal_sessions, tools, observer,
+};
+use fatir::models::{AgentResponse, Attachment, SystemSnapshot};
+use fatir::ollama::SharedState;
+use fatir::observer::ObserverConfig;
 use serde::Serialize;
-use observer::ObserverConfig;
-use std::{fs, path::PathBuf, sync::{Mutex, atomic::{AtomicBool, AtomicU32, Ordering}}};
-use tauri::{LogicalSize, Manager, PhysicalPosition, Position, Size, WindowEvent};
+use std::{fs, path::PathBuf, process::{Command as StdCommand, Stdio}, sync::{Mutex, atomic::{AtomicBool, AtomicU32, Ordering}}};
+#[cfg(unix)]
+use std::os::unix::net::UnixStream;
+use tauri::{LogicalSize, Manager, PhysicalPosition, Position, Size, WindowEvent, WebviewUrl, WebviewWindowBuilder};
 
+
+
+#[cfg(target_os = "linux")]
+unsafe extern "C" {
+    fn malloc_trim(pad: usize) -> i32;
+}
+
+fn schedule_heap_trim() {
+    #[cfg(target_os = "linux")]
+    tauri::async_runtime::spawn(async {
+        // Give WebKit/GTK a moment to release the destroyed webview's objects,
+        // then ask glibc to return free heap pages to the OS.
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        unsafe { let _ = malloc_trim(0); }
+    });
+}
 
 struct PanelUiState {
     pinned: AtomicBool,
@@ -122,6 +117,13 @@ fn save_api_key(key: String) -> Result<(), String> {
 #[tauri::command]
 fn clear_api_key() -> Result<(), String> {
     ollama::delete_api_key().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn pending_actions(state: tauri::State<'_, SharedState>) -> Result<Vec<fatir::models::PendingAction>, String> {
+    let shared = state.inner().clone();
+    ollama::refresh_pending_from_disk(&shared).await;
+    Ok(ollama::pending_actions(&shared).await)
 }
 
 #[tauri::command]
@@ -265,7 +267,8 @@ fn set_panel_layout(
 #[tauri::command]
 fn hide_panel(app: tauri::AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("main") {
-        window.hide().map_err(|e| e.to_string())?;
+        window.destroy().map_err(|e| e.to_string())?;
+        schedule_heap_trim();
     }
     Ok(())
 }
@@ -315,6 +318,22 @@ fn credential_store(label: String, account: String, secret: String) -> Result<se
 fn credential_remove(id: String) -> Result<(), String> {
     credentials::remove(&id).map_err(|e| e.to_string())
 }
+
+#[tauri::command]
+fn sudo_credential_status() -> serde_json::Value {
+    serde_json::json!({"stored": credentials::has_sudo()})
+}
+
+#[tauri::command]
+fn sudo_credential_store(secret: String) -> Result<serde_json::Value, String> {
+    credentials::store_sudo(&secret).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn sudo_credential_remove() -> Result<(), String> {
+    credentials::remove_sudo().map_err(|e| e.to_string())
+}
+
 
 #[tauri::command]
 async fn health_report() -> Result<serde_json::Value, String> {
@@ -375,7 +394,7 @@ fn v1_status() -> Result<serde_json::Value, String> {
     Ok(serde_json::json!({
         "version":env!("CARGO_PKG_VERSION"),"engine":orchestrator::status(),
         "active_tasks":tasks.len(),"running_jobs":jobs.iter().filter(|j|j.get("status").and_then(serde_json::Value::as_str)==Some("running")).count(),
-        "projects":projects.len(),"terminal_sessions":terminals.len(),"schedules":schedules.len(),"teach":teach::status(),"permissions":permissions::status(),"computer_control":pointer::status(),"failures":failures
+        "projects":projects.len(),"terminal_sessions":terminals.len(),"schedules":schedules.len(),"teach":teach::status(),"permissions":permissions::status(),"computer_control":pointer::status(),"continuations":continuations::status(),"auth_watcher":auth_watcher::status(),"failures":failures
     }))
 }
 
@@ -519,21 +538,65 @@ fn apply_panel_layout(app: &tauri::AppHandle, window: &tauri::WebviewWindow) {
     }
 }
 
-fn show_panel(app: &tauri::AppHandle) {
+fn ensure_main_window(app: &tauri::AppHandle) -> Option<tauri::WebviewWindow> {
     if let Some(window) = app.get_webview_window("main") {
+        return Some(window);
+    }
+    WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+        .title("Fatir")
+        .inner_size(420.0, 780.0)
+        .min_inner_size(360.0, 520.0)
+        .resizable(true)
+        .decorations(false)
+        .transparent(true)
+        .visible(false)
+        .shadow(true)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .build()
+        .ok()
+}
+
+fn show_panel(app: &tauri::AppHandle) {
+    if let Some(window) = ensure_main_window(app) {
         apply_panel_layout(app, &window);
         let _ = window.show();
         let _ = window.set_focus();
     }
 }
 
+fn ensure_core_running() {
+    #[cfg(unix)]
+    {
+        let socket = data_dir().join("core.sock");
+        if UnixStream::connect(&socket).is_ok() {
+            return;
+        }
+    }
+
+    if let Ok(mut child) = StdCommand::new("fatir-core")
+        .arg("--background")
+        .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null())
+        .spawn()
+    {
+        // Reap the helper if it exits (for example, a race where another core
+        // wins startup). This prevents defunct fatir-core children under the UI.
+        std::thread::spawn(move || { let _ = child.wait(); });
+    }
+}
+
 fn main() {
-    let state = ollama::new_state();
     let startup_args: Vec<String> = std::env::args().collect();
     let background = startup_args.iter().any(|a| a == "--background");
+    if background {
+        ensure_core_running();
+        return;
+    }
+    ensure_core_running();
+    let state = ollama::new_state();
     let startup_share = extract_share_args(&startup_args);
 
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             set_pending_share(app, &args);
             show_panel(app);
@@ -548,6 +611,7 @@ fn main() {
             clear_api_key,
             send_message,
             cancel_run,
+            pending_actions,
             open_local_path,
             open_external_url,
             approve_action,
@@ -583,6 +647,9 @@ fn main() {
             credential_list,
             credential_store,
             credential_remove,
+            sudo_credential_status,
+            sudo_credential_store,
+            sudo_credential_remove,
             cleanup_scan,
             cleanup_duplicates,
             trash_status,
@@ -610,28 +677,25 @@ fn main() {
         .setup(move |app| {
             fs::create_dir_all(data_dir()).ok();
             adaptive::ensure_layout().ok();
-            tauri::async_runtime::spawn(observer::run_forever());
-            tauri::async_runtime::spawn(proactive::monitor_forever());
-            if !background || !startup_share.is_empty() { show_panel(app.handle()); }
+            show_panel(app.handle());
             Ok(())
         })
         .on_window_event(|window, event| {
             match event {
-                WindowEvent::CloseRequested { api, .. } => {
-                    api.prevent_close();
-                    let _ = window.hide();
+                WindowEvent::CloseRequested { .. } => {
+                    let _ = window.destroy();
                 }
                 WindowEvent::Focused(false) => {
-                    // Default: behave like a menu-bar popover. Pinning is an explicit
-                    // temporary override for workflows where Fatir should stay visible.
-                    let panel = window.app_handle().state::<PanelUiState>();
-                    if !panel.pinned.load(Ordering::Relaxed) {
-                        let _ = window.hide();
-                    }
+                    // Keep the panel open on focus changes. CloseRequested and the
+                    // explicit hide action are the only hide paths. This avoids the
+                    // single-instance launcher callback showing Fatir and an immediate
+                    // focus-loss event hiding it again.
                 }
                 _ => {}
             }
         })
-        .run(tauri::generate_context!())
-        .expect("error while running Fatir");
+        .build(tauri::generate_context!())
+        .expect("error while building Fatir");
+
+    app.run(|_, _| {});
 }

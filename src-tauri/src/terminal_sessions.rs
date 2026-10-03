@@ -3,7 +3,9 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{fs, path::{Path, PathBuf}};
-use tokio::{process::Command, time::{timeout, Duration}};
+use tokio::{io::AsyncWriteExt, process::Command, time::{timeout, Duration}};
+use std::process::Stdio;
+use crate::credentials;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -30,8 +32,36 @@ pub fn set_cwd(id:&str,cwd:&str)->Result<Value>{let dir=expand(cwd);if !dir.is_d
 pub async fn exec(id:&str,command:&str,timeout_seconds:u64)->Result<Value>{
     if command.trim().is_empty(){return Err(anyhow!("Command cannot be empty"));}
     let mut items=load();let idx=items.iter().position(|s|s.id==id).ok_or_else(||anyhow!("Terminal session not found"))?;let cwd=items[idx].cwd.clone();
-    let child=Command::new("/bin/bash").arg("-lc").arg(command).current_dir(&cwd).output();
-    let out=timeout(Duration::from_secs(timeout_seconds.clamp(1,900)),child).await.map_err(|_|anyhow!("Terminal command timed out after {} seconds",timeout_seconds.clamp(1,900)))??;
+    let timeout_secs=timeout_seconds.clamp(1,900);
+
+    // Fatir-owned terminal commands that explicitly begin with sudo are executed
+    // through the keyring-backed sudo broker. The secret is sent only over stdin,
+    // never placed in the shell command, argv, history, model context or logs.
+    let trimmed=command.trim_start();
+    let sudo_rest=trimmed.strip_prefix("sudo ").map(str::trim_start);
+    let out=if let Some(rest)=sudo_rest {
+        if !credentials::has_sudo(){return Err(anyhow!("Administrator password is not stored. Save it in Fatir Settings first."));}
+        let secret=credentials::sudo_secret()?;
+        let mut child=Command::new("sudo")
+            .args(["-S","-p","","bash","-lc",rest])
+            .current_dir(&cwd)
+            .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped())
+            .spawn()?;
+        if let Some(mut stdin)=child.stdin.take(){
+            stdin.write_all(secret.as_bytes()).await?;
+            stdin.write_all(b"\n").await?;
+            stdin.shutdown().await?;
+        }
+        drop(secret);
+        timeout(Duration::from_secs(timeout_secs),child.wait_with_output()).await
+            .map_err(|_|anyhow!("Terminal command timed out after {} seconds",timeout_secs))??
+    } else {
+        timeout(
+            Duration::from_secs(timeout_secs),
+            Command::new("/bin/bash").arg("-lc").arg(command).current_dir(&cwd)
+                .stdout(Stdio::piped()).stderr(Stdio::piped()).output()
+        ).await.map_err(|_|anyhow!("Terminal command timed out after {} seconds",timeout_secs))??
+    };
     let stdout=String::from_utf8_lossy(&out.stdout).chars().take(20_000).collect::<String>();let stderr=String::from_utf8_lossy(&out.stderr).chars().take(12_000).collect::<String>();let code=out.status.code().unwrap_or(-1);
     let entry=SessionEntry{at:Utc::now().to_rfc3339(),command:command.chars().take(2000).collect(),exit_code:code,stdout:stdout.clone(),stderr:stderr.clone()};
     let s=&mut items[idx];s.history.push(entry);if s.history.len()>80{s.history.drain(0..s.history.len()-80);}s.updated_at=Utc::now().to_rfc3339();save(&items)?;

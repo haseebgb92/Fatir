@@ -1,3 +1,83 @@
+## 1.3.2 — Focused Terminal Sudo Watcher
+- Fixed sudo auto-entry regression after the resident-core/UI split.
+- The core still verifies a real `sudo` process exists, but no longer requires that process to be a descendant of GNOME Terminal's server PID.
+- The watcher now requires the sudo prompt to be in the currently focused recognized terminal and requires the exact sudo password prompt text before using the stored administrator credential.
+- Keeps the split low-memory `fatir-core` architecture and duplicate-core cleanup from 1.3.1.
+
+## 1.3.1 — Core Singleton Cleanup
+- The UI now checks the resident core Unix socket before attempting to start `fatir-core`.
+- Prevents duplicate core launch attempts when the background core is already running.
+- Any helper process started during a startup race is explicitly reaped, preventing defunct `fatir-core` children.
+
+## 1.3.0 — Split Resident Core + On-Demand UI
+- Fatir is now split into two processes: `fatir-core` for always-on background work and `fatir` for the on-demand Tauri/WebKit panel.
+- `fatir-core` does not link GTK, WebKit, JavaScriptCore or Soup.
+- Closing the Fatir panel terminates the UI process completely, returning all WebKit UI memory to Linux while the background core remains alive.
+- Resident sudo watching, proactive monitoring, observations and persistent task continuations run in `fatir-core`.
+- Session state is refreshed from disk before background continuation work.
+- Pending install/uninstall/Empty Trash approvals are persisted and surfaced when the panel is reopened.
+- Legacy `fatir --background` startup now hands off to `fatir-core`, so existing autostart entries remain compatible.
+
+## 1.2.8 — UI Heap Reclaim
+- After the Fatir UI webview is destroyed, Fatir now waits briefly for GTK/WebKit cleanup and calls glibc malloc_trim so released UI heap pages are returned to Linux.
+- Keeps the true headless resident startup introduced in 1.2.7.
+- Steady-state CPU was verified around 0–0.5% in idle sampling, with only brief 1% wakeups.
+
+## 1.2.7 — True Headless Resident Core
+- Removed the startup main WebKit window entirely; background startup now launches only the resident Rust core.
+- The Fatir UI is created on demand when the applet or launcher is clicked and destroyed again on close/hide.
+- This avoids carrying the hidden WebKit UI footprint while Fatir is idle.
+- Resident auth watching now performs one cheap privilege-process scan every 2 seconds instead of two scans every second.
+- Full desktop inspection only wakes when sudo or pkexec is actually present.
+
+## 1.2.6 — Resident UI + Idle Resource Fixes
+- Fixed Fatir sometimes failing to reopen after its panel was closed.
+- Removed focus-loss auto-hide that could immediately undo a launcher/applet reopen.
+- Closing or hiding the panel now destroys the WebKit UI instead of merely hiding it; the resident Rust core stays alive and recreates the panel on demand.
+- Prevents automatic app exit when the last UI window is destroyed, while preserving explicit exits/restarts.
+- Resident sudo watching now uses a cheap process probe first and only performs full desktop inspection when a real sudo/pkexec process exists.
+- Passive activity observation now has a 15-second minimum interval to reduce idle wakeups.
+
+## 1.2.5 — Always-On Resident Sudo Watcher
+- Fixed the resident auth watcher being unintentionally disabled after a Fatir response when no continuation binding existed.
+- Terminal sudo watching is now resident whenever Fatir is running and the Administrator Password is stored.
+- A terminal prompt is only handled when Fatir sees both an exact sudo password prompt and a real sudo process in that terminal's process tree.
+- Browser password fields remain excluded.
+- Pending Fatir approval gates still pause resident authentication.
+- PolicyKit/system authentication dialogs remain supported with protected-field handling and prompt cooldowns.
+
+## 1.2.4 — Resident Auth Watcher
+- Fatir now watches visible terminal windows and Linux authentication dialogs while a Fatir-managed task is active.
+- Exact sudo prompts in accessible terminals can be satisfied from the stored Administrator Password.
+- Genuine PolicyKit/system authentication dialogs can be filled through protected accessibility fields and submitted through unambiguous authentication controls.
+- Browser password fields are explicitly excluded.
+- The watcher pauses whenever a Fatir approval is pending and rate-limits each detected prompt for 120 seconds.
+- The watcher is reported in Fatir V1 diagnostics.
+
+## 1.2.3 — Persistent Task Continuation
+- Persistent Fatir tasks are now bound to the session that created them and remain active after an individual model response ends.
+- A background continuation worker re-enters active/waiting tasks, re-checks current state, and continues toward verified completion.
+- Duplicate runs are prevented while a session is already active, and pending approvals pause continuation until the user responds.
+- Active tasks back off between checks, blocked tasks retry less frequently, and repeated continuation failures pause the task instead of looping forever.
+- Completion and repeated-blocker states can surface local desktop notifications.
+- Fatir V1 status now reports the continuation engine and bound task count.
+- Existing keyring-backed sudo handling remains available for Fatir privileged commands and Fatir-owned terminal sessions.
+
+## 1.2.2 — Sudo Terminal Broker
+- Fatir terminal sessions can securely satisfy a leading sudo command using the Administrator Password stored in Linux Secret Service.
+- The password is sent only over the child process stdin and is never placed in argv, shell history, model context, clipboard, or logs.
+- Fatir prefers dedicated privileged/install tools instead of opening a visible terminal for administrator work.
+- Software installation/uninstallation and Empty Trash still retain explicit approval.
+
+## 1.2.0 — Autonomous Continuation & Sudo Broker
+
+- Added browser_wait_until so Fatir can keep polling long-running web/AI generation and continue the same workflow when results are ready.
+- Reduced approval prompts to software installation, software uninstallation, and permanently emptying Trash.
+- Added a dedicated Administrator Password setting stored only in Linux Secret Service/keyring.
+- Privileged Fatir commands use the stored sudo credential without exposing it to the model or logs, with PolicyKit fallback when no credential is stored.
+- Proactive monitoring now checks on a shorter two-minute cadence by default.
+- Updated runtime validation for the autonomous permission model and sudo dependency.
+
 # Changelog
 
 ## 1.1.1 — Full-height Command Center

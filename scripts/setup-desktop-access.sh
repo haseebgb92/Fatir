@@ -100,7 +100,7 @@ PY
 
 echo "[5/6] Testing window/input/visual fallbacks…"
 printf 'Session: %s\n' "${XDG_SESSION_TYPE:-unknown}"
-for cmd in wmctrl xdotool xclip xprop gio xdg-open gsettings gdbus gtk-launch update-desktop-database notify-send pkexec flatpak dpkg-query dpkg-deb pdfinfo pdftotext pdftoppm unzip tar systemctl systemd-run ps df du sha256sum git; do
+for cmd in wmctrl xdotool xclip xprop gio xdg-open gsettings gdbus gtk-launch update-desktop-database notify-send pkexec sudo flatpak dpkg-query dpkg-deb pdfinfo pdftotext pdftoppm unzip tar systemctl systemd-run ps df du sha256sum git; do
   if command -v "$cmd" >/dev/null 2>&1; then
     printf '  %-24s OK\n' "$cmd"
   else
@@ -123,7 +123,7 @@ python3 - <<'PY2'
 import os, shutil
 required = [
     'wmctrl','xdotool','xclip','xprop','gio','xdg-open','gsettings','gdbus','gtk-launch',
-    'update-desktop-database','notify-send','pkexec','flatpak','dpkg-query','dpkg-deb',
+    'update-desktop-database','notify-send','pkexec','sudo','flatpak','dpkg-query','dpkg-deb',
     'pdfinfo','pdftotext','pdftoppm','unzip','tar','systemctl','systemd-run',
     'ps','df','du','sha256sum','git'
 ]
